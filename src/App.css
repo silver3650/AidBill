@@ -1,0 +1,40 @@
+/* 인쇄 시 적용되는 전용 스타일 */
+@media print {
+  /* 1. 배경 화면 및 UI 요소 전체 숨김 */
+  body, html, #root, .no-print {
+    background: white !important;
+    background-color: white !important;
+  }
+  
+  body * {
+    visibility: hidden;
+  }
+  
+  /* 2. 인쇄 지정 구역만 강제 노출 */
+  .print-page-area, .print-page-area * {
+    visibility: visible;
+  }
+  
+  /* 3. 스크롤바가 생기지 않도록 고정 및 정렬 */
+  .print-page-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 4. 서류 컴포넌트 간 강제 페이지 단 분할 (서류 겹침 방지) */
+  .print-page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+    margin-top: 0 !important;
+  }
+
+  /* 5. 브라우저 강제 여백 및 헤더/푸터 스크랩 숨김 가이드 */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+}
