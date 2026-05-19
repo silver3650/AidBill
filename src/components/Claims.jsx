@@ -450,13 +450,16 @@ export default function Claims() {
     const currentCompanyName = companyInfo.company_name || '(주)케어플러스';
     const currentCustomerName = claim.customers?.name || '대상자';
     const currentContactNumber = companyInfo.contact_number || '1833-6365';
+    // 이메일 정보 가져오기 (없을 경우 기본값)
+    const currentEmail = companyInfo.email || '';
 
     setEmailData({ 
       recipient, 
       sender: companyInfo.email, 
       files: initialFiles,
       subject: `장애인 보조기기 교부 관련 비용청구서 송부의 건(${currentCustomerName})`, 
-      content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n참고로 세금계산서는 본 메일과 별개로 발행되어 발송될 예정입니다.\n\n서류를 검토하신 후 의문 사항이 있으시거나 보완이 필요한 점이 있다면\n아래 담당자 연락처로 언제든지 연락 주시기 바랍니다.\n\n감사합니다.\n\n주식회사 케어플러스 담당자 배상\nTel: ${currentContactNumber}`
+      // 이메일 내용 하단 서명에 업체명 -> 이메일 -> 전화번호 순으로 삽입
+      content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n참고로 세금계산서는 본 메일과 별개로 발행되어 발송될 예정입니다.\n\n서류를 검토하신 후 의문 사항이 있으시거나 보완이 필요한 점이 있다면\n아래 담당자 연락처로 언제든지 연락 주시기 바랍니다.\n\n감사합니다.\n\n${currentCompanyName} 담당자 배상\nEmail: ${currentEmail}\nTel: ${currentContactNumber}`
     });
     setIsDocPreview(false); setActiveModal('email');
   };
@@ -470,7 +473,6 @@ export default function Claims() {
     setActiveModal('print');
   };
 
-  // 핵심 수정: Edge Function 페이로드 초과 방지 및 정확한 Base64 포맷핑
   const handleSendRealEmail = async () => {
     const emailMatch = emailData.recipient.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/);
     if (!emailMatch) { alert('올바른 수신 메일을 입력해 주세요.'); return; }
@@ -485,14 +487,12 @@ export default function Claims() {
           for (let i = 0; i < docElements.length; i++) {
             const element = docElements[i];
             
-            // 1. 이미지 스케일과 압축률을 적절히 조절하여 Payload 용량 초과 에러 방지
             const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, logging: false, allowTaint: true });
             const imgData = canvas.toDataURL('image/jpeg', 0.8);
             
             const pdf = new jsPDF('p', 'mm', 'a4');
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             
-            // 2. data URI에서 순수 Base64 문자열만 추출하여 전송 (API 포맷 일치)
             const pdfDataUri = pdf.output('datauristring');
             const base64Content = pdfDataUri.split('base64,')[1];
             
@@ -1178,8 +1178,12 @@ export default function Claims() {
                         <input type="date" className="w-full bg-white p-2.5 rounded-xl outline-none text-sm font-bold border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                       </div>
                       <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-gray-200" value={emailData.recipient} onChange={e => setEmailData({...emailData, recipient: e.target.value})} placeholder="수신 이메일" />
-                      <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm font-black text-gray-900 border border-gray-200" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
-                      <textarea className="w-full h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
+                      
+                      {/* 제목 입력란 (이미 수정 가능하도록 구현되어 있음) */}
+                      <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm font-black text-gray-900 border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
+                      
+                      {/* 내용 입력란 (이미 수정 가능하도록 구현되어 있음) */}
+                      <textarea className="w-full h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
                     </div>
                     <div className="col-span-2 p-6 bg-gray-50 flex flex-col overflow-y-auto">
                       <div className="mb-4 text-xs text-blue-600 uppercase font-black">첨부 서류 선택</div>
