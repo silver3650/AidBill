@@ -48,6 +48,8 @@ export default function Claims() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
+  const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [activeModal, setActiveModal] = useState(null); 
   const [selectedClaim, setSelectedClaim] = useState(null);
 
@@ -179,24 +181,32 @@ export default function Claims() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => {
-    let result = [...claims];
-    if (searchTerm) result = result.filter(h => h.customers && h.customers.name.includes(searchTerm));
-    if (statusFilter !== '전체') result = result.filter(h => h.status === statusFilter);
-    if (dateRange.start && dateRange.end) result = result.filter(h => h.claim_date >= dateRange.start && h.claim_date <= dateRange.end);
-    
-    if (groupByCustomer) {
-      result.sort((a, b) => {
-        const nameA = a.customers?.name || '';
-        const nameB = b.customers?.name || '';
-        if (nameA !== nameB) return nameA.localeCompare(nameB, 'ko');
-        return new Date(b.claim_date) - new Date(a.claim_date);
-      });
-    }
+  // [기존 코드에서 찾아서 아래 내용으로 교체]
+useEffect(() => {
+  let result = [...claims];
+  const term = searchTerm.toLowerCase();
+  
+  if (term) {
+    result = result.filter(h => 
+      (h.customers?.name?.toLowerCase() || '').includes(term) || 
+      (h.customers?.local_governments?.name?.toLowerCase() || '').includes(term)
+    );
+  }
+  if (statusFilter !== '전체') result = result.filter(h => h.status === statusFilter);
+  if (dateRange.start && dateRange.end) result = result.filter(h => h.claim_date >= dateRange.start && h.claim_date <= dateRange.end);
+  
+  if (groupByCustomer) {
+    result.sort((a, b) => {
+      const nameA = a.customers?.name || '';
+      const nameB = b.customers?.name || '';
+      if (nameA !== nameB) return nameA.localeCompare(nameB, 'ko');
+      return new Date(b.claim_date) - new Date(a.claim_date);
+    });
+  }
 
-    setFilteredClaims(result);
-    setCurrentPage(1);
-  }, [searchTerm, statusFilter, dateRange, claims, groupByCustomer]);
+  setFilteredClaims(result);
+  setCurrentPage(1);
+}, [searchTerm, statusFilter, dateRange, claims, groupByCustomer]);
 
   const cleanString = (str) => (str || '').replace(/\s+/g, '').toLowerCase();
 
@@ -797,6 +807,8 @@ export default function Claims() {
               <th className="py-3 px-4 w-[10%]">접수일</th>
               <th className="py-3 px-5 w-[15%]">대상자 / 지자체</th>
               <th className="py-3 px-5 w-[20%]">할당 품목</th>
+              <th className="py-3 px-4 text-right">청구금액</th>
+              <th className="py-3 px-4">입금일</th>
               <th className="py-3 px-5 w-[25%]">진행 파이프라인</th>
               <th className="py-3 px-5 text-right w-[25%]">업무 실행 (단계별 제안)</th>
             </tr>
@@ -826,7 +838,8 @@ export default function Claims() {
                       claim.products?.name
                     )}
                   </td>
-                  
+                  <td className="py-3 px-4 text-right font-mono font-bold text-xs">{claim.total_amount?.toLocaleString()}</td>
+                  <td className="py-3 px-4 font-mono text-xs">{claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</td>
                   <td className="py-3 px-5 align-middle">
                     {isProductMissing ? (
                       <button 
@@ -874,10 +887,13 @@ export default function Claims() {
 
                       {s === '청구 완료 (계산서 발행)' && (
                         <button 
-                          onClick={() => handleSettlementConfirm(claim.id)} 
-                          className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"
-                        >
-                          <CheckCircle2 size={14}/> 정산 완료
+                          onClick={() => { 
+      setSelectedClaim(claim); 
+      setActiveModal('settlement'); 
+    }} 
+    className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"
+  >
+    <CheckCircle2 size={14}/> 정산 완료
                         </button>
                       )}
                       
@@ -1018,6 +1034,23 @@ export default function Claims() {
           </div>
         </div>
       )}
+
+      {/* 입금일 등록 모달 */}
+      {activeModal === 'settlement' && selectedClaim && (
+  <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+    <div className="bg-white w-full max-w-sm rounded-3xl p-8 shadow-2xl">
+      <h2 className="text-lg font-black mb-4">정산 입금일 등록</h2>
+      <input type="date" className="w-full p-3 bg-gray-50 rounded-xl mb-6 font-bold" value={depositDate} onChange={e => setDepositDate(e.target.value)} />
+      <div className="flex gap-2">
+        <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-sm">취소</button>
+        <button onClick={async () => {
+            const { error } = await supabase.from('claims').update({ status: '정산 완료', deposit_date: depositDate }).eq('id', selectedClaim.id);
+            if (!error) { alert('정산 완료 처리되었습니다.'); setActiveModal(null); fetchData(); }
+        }} className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm">완료</button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* 종합 편집 모달 */}
       {activeModal === 'edit' && selectedClaim && (
