@@ -40,7 +40,7 @@ export default function Claims() {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [statusFilter, setStatusFilter] = useState('전체');
-  const [groupByCustomer, setGroupByCustomer] = useState(false); // 💡 대상자별 묶어보기 필터 상태 추가
+  const [groupByCustomer, setGroupByCustomer] = useState(false); 
 
   const [custSearchTerm, setCustSearchTerm] = useState('');
   const [prodSearchTerm, setProdSearchTerm] = useState('');
@@ -185,7 +185,6 @@ export default function Claims() {
     if (statusFilter !== '전체') result = result.filter(h => h.status === statusFilter);
     if (dateRange.start && dateRange.end) result = result.filter(h => h.claim_date >= dateRange.start && h.claim_date <= dateRange.end);
     
-    // 💡 대상자별 묶어보기 정렬 로직 적용 (가나다순 그룹화 후 최신 접수일 순 정렬)
     if (groupByCustomer) {
       result.sort((a, b) => {
         const nameA = a.customers?.name || '';
@@ -248,7 +247,7 @@ export default function Claims() {
     setSearchTerm(''); 
     setDateRange({ start: '', end: '' }); 
     setStatusFilter('전체'); 
-    setGroupByCustomer(false); // 💡 초기화 시 묶어보기 토글도 리셋
+    setGroupByCustomer(false); 
   };
 
   const handleDelete = async (id) => {
@@ -482,7 +481,10 @@ export default function Claims() {
             const pdf = new jsPDF('p', 'mm', 'a4');
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             
-            attachmentsArray.push({ content: pdf.output('datauristring').split(',')[1], filename: `${element.getAttribute('data-docname')}_${selectedClaim.customers?.name || '서류'}.pdf` });
+            attachmentsArray.push({ 
+              content: pdf.output('base64'), 
+              filename: `${element.getAttribute('data-docname')}_${selectedClaim.customers?.name || '서류'}.pdf` 
+            });
           }
         }
         const { error } = await supabase.functions.invoke('send-claim-email', {
@@ -492,7 +494,11 @@ export default function Claims() {
         
         await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
         alert('메일이 성공적으로 전송되었습니다.'); setActiveModal(null); fetchData();
-      } catch (err) { alert('메일 전송에 실패했습니다.'); } finally { setIsSendingEmail(false); }
+      } catch (err) { 
+        alert('메일 전송에 실패했습니다: ' + err.message); 
+      } finally { 
+        setIsSendingEmail(false); 
+      }
     }
   };
 
@@ -568,7 +574,10 @@ export default function Claims() {
     return <div className="h-[297mm] flex items-center justify-center text-gray-400 font-bold">문서 양식을 찾을 수 없습니다.</div>;
   };
 
-  const renderStatusPipeline = (currentStatus) => {
+  const renderStatusPipeline = (claim) => {
+    const currentStatus = claim.status;
+    const isPhotoMissing = currentStatus === '교부 완료' && (!claim.receipt_photos || claim.receipt_photos.length === 0);
+
     let currentIndex = STATUS_STAGES.indexOf(currentStatus);
     if (currentIndex === -1) {
       currentIndex = 0;
@@ -576,6 +585,16 @@ export default function Claims() {
     
     const formatStageText = (stage) => {
       if (!stage) return null;
+      
+      if (stage === '교부 완료' && isPhotoMissing && stage === currentStatus) {
+        return (
+          <div className="text-center leading-tight flex flex-col items-center justify-center">
+            <div className="font-extrabold flex items-center gap-1"><AlertTriangle size={10}/> 교부 완료</div>
+            <div className="text-[10px] font-black text-rose-500 mt-0.5">(사진 누락)</div>
+          </div>
+        );
+      }
+
       if (stage.includes('(')) {
         const [main, sub] = stage.split(' (');
         return (
@@ -589,11 +608,14 @@ export default function Claims() {
     };
 
     const getStageColor = (stage, isActive) => {
-      if (!stage) return 'bg-gray-50 text-gray-400 border-gray-200';
-      if (!isActive) return 'bg-gray-50 text-gray-400 border-gray-200';
+      if (!stage || !isActive) return 'bg-gray-50 text-gray-400 border-gray-200';
       if (stage === '대기 중') return 'bg-slate-100 text-slate-700 border-slate-300';
       if (stage === '배송 중') return 'bg-amber-50 text-amber-700 border-amber-300';
-      if (stage === '교부 완료') return 'bg-purple-50 text-purple-700 border-purple-300';
+      if (stage === '교부 완료') {
+        return isPhotoMissing 
+          ? 'bg-rose-50 text-rose-600 border-rose-300 ring-1 ring-rose-200' 
+          : 'bg-purple-50 text-purple-700 border-purple-300';
+      }
       if (stage.includes('미발행')) return 'bg-orange-50 text-orange-700 border-orange-300 shadow-sm shadow-orange-100';
       if (stage.includes('계산서 발행')) return 'bg-blue-50 text-blue-700 border-blue-300 shadow-sm shadow-blue-100';
       if (stage === '정산 완료') return 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm shadow-emerald-100';
@@ -658,7 +680,7 @@ export default function Claims() {
               height: 297mm !important;
               background: white !important;
             }
-            #root, .print\:hidden, body > div:not(.print-root-container), .fixed, .overflow-hidden {
+            #root, .print\\:hidden, body > div:not(.print-root-container), .fixed, .overflow-hidden {
               display: none !important;
               position: static !important;
               overflow: visible !important;
@@ -739,9 +761,7 @@ export default function Claims() {
           </select>
         </div>
         
-        {/* 💡 날짜 및 묶어보기 통합 컨트롤 타워 구역 */}
         <div className="col-span-7 flex justify-end items-center gap-2">
-          {/* 💡 대상자별 묶어보기 토글 스위치 버튼 */}
           <button 
             onClick={() => setGroupByCustomer(!groupByCustomer)} 
             className={`px-3 py-2 text-xs font-bold border rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
@@ -816,7 +836,7 @@ export default function Claims() {
                         <Plus size={12}/> 상품할당 바로가기
                       </button>
                     ) : (
-                      renderStatusPipeline(s)
+                      renderStatusPipeline(claim)
                     )}
                   </td>
 
@@ -829,6 +849,15 @@ export default function Claims() {
                       
                       {s === '교부 완료' && (
                         <>
+                          {(!claim.receipt_photos || claim.receipt_photos.length === 0) && (
+                            <button 
+                              onClick={() => openEditModal(claim)} 
+                              className="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-black shadow-sm hover:bg-rose-100 flex items-center gap-1.5 animate-pulse"
+                              title="수취 증빙 사진이 누락되었습니다."
+                            >
+                              <Camera size={14}/> 사진 보완
+                            </button>
+                          )}
                           <button onClick={() => openPrintModal(claim)} className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-50 flex items-center gap-1.5"><Printer size={14}/> 인쇄</button>
                           <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
                         </>
@@ -854,7 +883,6 @@ export default function Claims() {
                       
                       {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
 
-                      {/* 호버 액션 툴박스 내에 '품목 추가(복사)' 인라인 원클릭 버튼 정밀 결합 */}
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex items-center gap-1">
                         <button 
                           onClick={() => openProductAssignmentModal(claim)} 
