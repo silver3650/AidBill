@@ -187,58 +187,61 @@ export default function LocalGovernments() {
     .sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
       
-      <div className="flex justify-between items-end">
+      {/* 모바일 반응형 헤더 */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tighter">지자체 관리</h1>
-          <p className="text-gray-500 mt-2 font-bold flex items-center gap-2">
-            <Building2 size={18} className="text-blue-600" /> 총 {govs.length}개의 관할 지자체가 등록되어 있습니다.
+          <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">지자체 관리</h1>
+          <p className="text-gray-500 mt-2 font-bold flex items-center gap-2 text-sm md:text-base">
+            <Building2 size={18} className="text-blue-600 shrink-0" /> 총 {govs.length}개의 관할 지자체가 등록되어 있습니다.
           </p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center gap-2 hover:scale-105 transition-all"
+          className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-105 transition-all"
         >
           <Plus size={22} /> 지자체 등록
         </button>
       </div>
 
-      <div className="bg-white p-2 rounded-[2rem] border border-gray-100 shadow-sm flex items-center group focus-within:border-blue-200 transition-all">
-        <Search className="ml-6 text-gray-400 group-focus-within:text-blue-600" size={20} />
+      {/* 모바일 반응형 검색바 */}
+      <div className="bg-white p-2 rounded-2xl md:rounded-[2rem] border border-gray-100 shadow-sm flex items-center group focus-within:border-blue-200 transition-all">
+        <Search className="ml-4 md:ml-6 text-gray-400 group-focus-within:text-blue-600" size={20} />
         <input 
           type="text" placeholder="지자체명으로 검색하세요..." 
-          className="w-full p-5 outline-none font-bold text-gray-800 bg-transparent"
+          className="w-full p-4 md:p-5 outline-none font-bold text-gray-800 bg-transparent text-sm md:text-base"
           value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
         {filteredGovs.map(gov => {
           const cleanDocs = normalizeDocs(gov.required_documents);
           const extraContacts = parseContacts(gov.additional_contacts);
           
           return (
-            <div key={gov.id} className="bg-white rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/10 p-8 flex flex-col group hover:border-blue-200 transition-all">
-              <div className="flex justify-between items-start mb-6">
+            <div key={gov.id} className="bg-white rounded-3xl md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/10 p-6 md:p-8 flex flex-col group hover:border-blue-200 transition-all">
+              <div className="flex justify-between items-start mb-5 md:mb-6">
                 <div>
-                  <span className="inline-block px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg mb-3 tracking-widest">
+                  <span className="inline-block px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-lg mb-2 md:mb-3 tracking-widest">
                     관할 기관
                   </span>
                   <h3 
                     onClick={() => openEditModal(gov)}
-                    className="text-2xl font-black text-gray-900 tracking-tight leading-tight cursor-pointer hover:text-blue-600 transition-colors"
+                    className="text-xl md:text-2xl font-black text-gray-900 tracking-tight leading-tight cursor-pointer hover:text-blue-600 transition-colors"
                   >
                     {gov.name}
                   </h3>
                 </div>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openEditModal(gov)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 rounded-xl hover:bg-blue-50 transition-all"><Edit3 size={16}/></button>
-                  <button onClick={() => handleDelete(gov.id, gov.name)} className="p-2 text-gray-400 hover:text-red-500 bg-gray-50 rounded-xl hover:bg-red-50 transition-all"><Trash2 size={16}/></button>
+                {/* 모바일에서는 버튼 상시 노출, PC에서는 Hover 시 노출 */}
+                <div className="flex gap-1.5 md:gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => openEditModal(gov)} className="p-2 text-gray-400 hover:text-blue-600 bg-gray-50 rounded-xl hover:bg-blue-50 transition-all shadow-sm"><Edit3 size={16}/></button>
+                  <button onClick={() => handleDelete(gov.id, gov.name)} className="p-2 text-gray-400 hover:text-red-500 bg-gray-50 rounded-xl hover:bg-red-50 transition-all shadow-sm"><Trash2 size={16}/></button>
                 </div>
               </div>
 
-              <div className="space-y-4 mb-8">
+              <div className="space-y-3 md:space-y-4 mb-6 md:mb-8">
                 {/* 대표 담당자 */}
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                   <p className="text-[11px] font-black text-blue-600 mb-2 tracking-widest">대표 담당자</p>
@@ -260,8 +263,8 @@ export default function LocalGovernments() {
                 )}
               </div>
 
-              <div className="mt-auto pt-6 border-t border-gray-100">
-                <p className="text-xs font-black text-gray-400 mb-3 flex items-center gap-1">
+              <div className="mt-auto pt-5 md:pt-6 border-t border-gray-100">
+                <p className="text-[11px] md:text-xs font-black text-gray-400 mb-3 flex items-center gap-1">
                   <FileCheck size={14} className="text-blue-400"/> 필수 제출 서류 ({cleanDocs.length}종)
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -280,29 +283,30 @@ export default function LocalGovernments() {
         })}
       </div>
 
+      {/* 신규 등록 및 수정 모달 (모바일 반응형 최적화) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xl overflow-y-auto">
-          <div className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-black/60 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white w-full max-w-3xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
             
-            <div className="p-8 border-b border-gray-50 flex justify-between items-center bg-blue-50/30 shrink-0">
+            <div className="p-6 md:p-8 border-b border-gray-50 flex justify-between items-center bg-blue-50/30 shrink-0">
               <div>
-                <h4 className="text-2xl font-black text-gray-900 tracking-tight">
+                <h4 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
                   {editingId ? '지자체 정보 수정' : '신규 지자체 등록'}
                 </h4>
-                <p className="text-sm text-gray-500 font-bold mt-1">담당 기관의 정보와 요구 서류를 설정합니다.</p>
+                <p className="text-xs md:text-sm text-gray-500 font-bold mt-1">담당 기관의 정보와 요구 서류를 설정합니다.</p>
               </div>
-              <button onClick={closeModal} className="w-12 h-12 flex items-center justify-center bg-white border border-gray-100 rounded-2xl text-gray-400 hover:text-black shadow-sm transition-all">
-                <X size={24}/>
+              <button onClick={closeModal} className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center bg-white border border-gray-100 rounded-xl md:rounded-2xl text-gray-400 hover:text-black shadow-sm transition-all shrink-0">
+                <X size={20} className="md:w-6 md:h-6"/>
               </button>
             </div>
             
-            <div className="p-8 space-y-8 overflow-y-auto flex-1">
+            <div className="p-6 md:p-8 space-y-6 md:space-y-8 overflow-y-auto flex-1 custom-scrollbar">
               {/* 기본 지자체 정보 */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-extrabold text-gray-800 ml-1">관할 지자체명 *</label>
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">관할 지자체명 *</label>
                   <input 
-                    className="w-full bg-gray-50 p-4 rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all"
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base"
                     placeholder="예: 성남시청 노인복지과"
                     value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}
                   />
@@ -310,12 +314,12 @@ export default function LocalGovernments() {
               </div>
 
               {/* 담당자 영역 */}
-              <div className="bg-white border-2 border-gray-50 rounded-[2rem] p-6 space-y-6">
+              <div className="bg-white border-2 border-gray-50 rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 space-y-5 md:space-y-6">
                 <div className="flex justify-between items-center">
-                  <h5 className="font-black text-gray-800 flex items-center gap-2"><User size={18} className="text-blue-600"/> 담당자 정보</h5>
+                  <h5 className="font-black text-gray-800 flex items-center gap-2 text-sm md:text-base"><User size={18} className="text-blue-600"/> 담당자 정보</h5>
                   <button 
                     onClick={addContact}
-                    className="text-xs font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl flex items-center gap-1 hover:bg-blue-100 transition-all"
+                    className="text-[10px] md:text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl flex items-center gap-1 hover:bg-blue-100 transition-all"
                   >
                     <PlusCircle size={14}/> 담당자 추가
                   </button>
@@ -324,9 +328,9 @@ export default function LocalGovernments() {
                 {/* 대표 담당자 입력란 */}
                 <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 relative">
                   <span className="absolute -top-2.5 left-4 bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md">대표</span>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mt-2">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-500 ml-1">성명</label>
+                      <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">성명</label>
                       <input 
                         className="w-full bg-white p-3 rounded-xl border border-gray-200 outline-none font-bold text-sm text-gray-800 focus:border-blue-500 transition-all"
                         placeholder="예: 홍길동 주무관"
@@ -334,7 +338,7 @@ export default function LocalGovernments() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-gray-500 ml-1">연락처</label>
+                      <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">연락처</label>
                       <input 
                         className="w-full bg-white p-3 rounded-xl border border-gray-200 outline-none font-bold text-sm text-gray-800 focus:border-blue-500 transition-all"
                         placeholder="031-000-0000"
@@ -342,7 +346,7 @@ export default function LocalGovernments() {
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-bold text-gray-500 ml-1">이메일 주소</label>
+                      <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">이메일 주소</label>
                       <input 
                         type="email"
                         className="w-full bg-white p-3 rounded-xl border border-gray-200 outline-none font-bold text-sm text-gray-800 focus:border-blue-500 transition-all"
@@ -363,9 +367,9 @@ export default function LocalGovernments() {
                       <MinusCircle size={18}/>
                     </button>
                     <span className="absolute -top-2.5 left-4 bg-gray-200 text-gray-600 text-[10px] font-black px-2 py-0.5 rounded-md">추가 {index + 1}</span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mt-2">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-500 ml-1">성명</label>
+                        <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">성명</label>
                         <input 
                           className="w-full bg-gray-50 p-3 rounded-xl border-none outline-none font-bold text-sm text-gray-800 focus:ring-2 focus:ring-gray-200 transition-all"
                           placeholder="추가 담당자명"
@@ -373,7 +377,7 @@ export default function LocalGovernments() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-500 ml-1">연락처</label>
+                        <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">연락처</label>
                         <input 
                           className="w-full bg-gray-50 p-3 rounded-xl border-none outline-none font-bold text-sm text-gray-800 focus:ring-2 focus:ring-gray-200 transition-all"
                           placeholder="연락처"
@@ -381,7 +385,7 @@ export default function LocalGovernments() {
                         />
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-xs font-bold text-gray-500 ml-1">이메일 주소</label>
+                        <label className="text-[11px] md:text-xs font-bold text-gray-500 ml-1">이메일 주소</label>
                         <input 
                           type="email"
                           className="w-full bg-gray-50 p-3 rounded-xl border-none outline-none font-bold text-sm text-gray-800 focus:ring-2 focus:ring-gray-200 transition-all"
@@ -397,26 +401,26 @@ export default function LocalGovernments() {
               {/* 필수 서류 영역 */}
               <div className="pt-6 border-t border-gray-100 space-y-4">
                 <div className="flex flex-col">
-                  <label className="text-sm font-extrabold text-gray-800 ml-1 flex items-center gap-1">
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1 flex items-center gap-1">
                     <FileCheck size={16} className="text-blue-600"/> 해당 지자체 요구 서류 설정
                   </label>
-                  <p className="text-[11px] text-gray-400 font-bold ml-1 mt-1 mb-4">
+                  <p className="text-[10px] md:text-[11px] text-gray-400 font-bold ml-1 mt-1 mb-3 md:mb-4">
                     체크된 서류는 향후 이 지자체 소속 대상자의 청구 메일 발송 시 기본 첨부 목록으로 자동 세팅됩니다.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-3">
                   {STANDARD_DOCS.map(doc => {
                     const isSelected = formData.required_documents.includes(doc.id);
                     return (
                       <button 
                         key={doc.id} onClick={() => toggleDoc(doc.id)}
-                        className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm' : 'border-gray-100 bg-white text-gray-500 hover:border-blue-200'}`}
+                        className={`flex items-center gap-3 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-2 transition-all text-left ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm' : 'border-gray-100 bg-white text-gray-500 hover:border-blue-200'}`}
                       >
                         <div className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'}`}>
                           {isSelected && <Check size={12} className="text-white" strokeWidth={4} />}
                         </div>
-                        <span className="text-sm font-bold flex-1">{doc.label}</span>
+                        <span className="text-xs md:text-sm font-bold flex-1">{doc.label}</span>
                       </button>
                     );
                   })}
@@ -424,9 +428,9 @@ export default function LocalGovernments() {
               </div>
             </div>
 
-            <div className="p-8 bg-gray-50 flex gap-4 border-t border-gray-100 shrink-0">
-              <button onClick={closeModal} className="flex-1 py-5 bg-white border border-gray-200 rounded-[1.5rem] font-black text-gray-500 hover:bg-gray-50 transition-all">취소</button>
-              <button onClick={handleSave} className="flex-1 py-5 bg-blue-600 text-white rounded-[1.5rem] font-black shadow-xl shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all">
+            <div className="p-5 md:p-8 bg-gray-50 flex gap-3 md:gap-4 border-t border-gray-100 shrink-0">
+              <button onClick={closeModal} className="flex-1 py-3.5 md:py-5 bg-white border border-gray-200 rounded-xl md:rounded-[1.5rem] font-black text-gray-500 hover:bg-gray-50 transition-all text-sm md:text-base">취소</button>
+              <button onClick={handleSave} className="flex-[1.5] md:flex-1 py-3.5 md:py-5 bg-blue-600 text-white rounded-xl md:rounded-[1.5rem] font-black shadow-xl shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all text-sm md:text-base">
                 {editingId ? '지자체 수정' : '지자체 등록'}
               </button>
             </div>

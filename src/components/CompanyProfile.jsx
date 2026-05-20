@@ -86,94 +86,95 @@ export default function CompanyProfile() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      {/* --- 상단 헤더 --- */}
-      <div className="flex justify-between items-end">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
+      {/* --- 상단 헤더 (모바일 반응형 최적화) --- */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tighter">업체 정보</h1>
-          <p className="text-gray-500 mt-2 font-medium">청구서 및 필수 제출 서류에 자동 입력될 자사의 정보를 관리합니다.</p>
+          <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">업체 정보</h1>
+          <p className="text-sm md:text-base text-gray-500 mt-2 font-medium">청구서 및 필수 제출 서류에 자동 입력될 자사의 정보를 관리합니다.</p>
         </div>
         <button 
           onClick={handleSave} disabled={isLoading}
-          className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center gap-2 hover:scale-105 transition-all disabled:opacity-50"
+          className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-105 transition-all disabled:opacity-50 shrink-0"
         >
-          {isLoading ? <Clock className="animate-spin" size={22} /> : <Save size={22} />} 
+          {isLoading ? <Clock className="animate-spin" size={20} /> : <Save size={20} />} 
           {isLoading ? '저장 중...' : '정보 저장하기'}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         {/* --- 좌측: 텍스트 정보 입력 --- */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className="lg:col-span-2 space-y-6 md:space-y-8">
           
           {/* 1. 기본 정보 */}
-          <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-6">
-            <h3 className="text-xl font-black text-gray-900 flex items-center gap-2 mb-8">
-              <Building className="text-blue-600" size={22} /> 기본 정보
+          <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
+              <Building className="text-blue-600" size={20} /> 기본 정보
             </h3>
             
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">상호명</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">상호명</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="예: 주식회사 에이드빌"
                   value={formData.company_name} onChange={e => setFormData({...formData, company_name: e.target.value})}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">사업자 등록번호</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">사업자 등록번호</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="000-00-00000"
                   value={formData.business_number} onChange={e => setFormData({...formData, business_number: e.target.value})}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">대표자명</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">대표자명</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
+                  placeholder="대표자명"
                   value={formData.representative_name} onChange={e => setFormData({...formData, representative_name: e.target.value})}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">대표자 생년월일</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">대표자 생년월일</label>
                 <input 
-                  type="date" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="date" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   value={formData.representative_birth} onChange={e => setFormData({...formData, representative_birth: e.target.value})}
                 />
               </div>
               
-              {/* 🚨 새로 추가된 업태/종목 필드 */}
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">업태</label>
+              {/* 업태/종목 필드 */}
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">업태</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="예: 도소매"
                   value={formData.biz_type} onChange={e => setFormData({...formData, biz_type: e.target.value})}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">종목</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">종목</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="예: 의료기기"
                   value={formData.biz_item} onChange={e => setFormData({...formData, biz_item: e.target.value})}
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">회사 연락처</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">회사 연락처</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="02-000-0000"
                   value={formData.contact_number} onChange={e => setFormData({...formData, contact_number: e.target.value})}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">이메일 주소</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">이메일 주소</label>
                 <input 
-                  type="email" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="email" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="admin@careplus.com"
                   value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})}
                 />
@@ -182,40 +183,40 @@ export default function CompanyProfile() {
           </div>
 
           {/* 2. 주소 정보 (카카오 우편번호 연동) */}
-          <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-6">
-            <h3 className="text-xl font-black text-gray-900 flex items-center gap-2 mb-8">
-              <MapPin className="text-blue-600" size={22} /> 사업장 주소
+          <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
+              <MapPin className="text-blue-600" size={20} /> 사업장 주소
             </h3>
             
             <div className="space-y-4">
-              <div className="flex gap-4 items-end">
-                <div className="space-y-2 w-48">
-                  <label className="text-sm font-extrabold text-gray-800 ml-1">우편번호</label>
+              <div className="flex gap-2 md:gap-4 items-end">
+                <div className="space-y-1.5 md:space-y-2 flex-1 md:flex-none md:w-48">
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">우편번호</label>
                   <input 
-                    type="text" readOnly className="w-full bg-gray-100 p-4 rounded-2xl outline-none font-black text-gray-600 border-none cursor-not-allowed"
+                    type="text" readOnly className="w-full bg-gray-100 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-black text-gray-600 border-none cursor-not-allowed text-sm md:text-base"
                     placeholder="우편번호" value={formData.zip_code}
                   />
                 </div>
                 <button 
                   onClick={handleAddressSearch}
-                  className="bg-gray-800 text-white px-6 py-4 rounded-2xl font-black flex items-center gap-2 hover:bg-black transition-all"
+                  className="bg-gray-800 text-white px-5 md:px-6 py-3.5 md:py-4 rounded-xl md:rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-black transition-all text-sm md:text-base whitespace-nowrap"
                 >
                   <Search size={18} /> 주소 검색
                 </button>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">기본 주소</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">기본 주소</label>
                 <input 
-                  type="text" readOnly className="w-full bg-gray-100 p-4 rounded-2xl outline-none font-black text-gray-600 border-none cursor-not-allowed"
+                  type="text" readOnly className="w-full bg-gray-100 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-black text-gray-600 border-none cursor-not-allowed text-sm md:text-base"
                   placeholder="주소 검색을 이용해 주세요." value={formData.address}
                 />
               </div>
               
-              <div className="space-y-2">
-                <label className="text-sm font-extrabold text-gray-800 ml-1">상세 주소</label>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">상세 주소</label>
                 <input 
-                  type="text" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none"
+                  type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all border-none text-sm md:text-base"
                   placeholder="나머지 상세 주소를 입력해 주세요."
                   value={formData.detail_address} onChange={e => setFormData({...formData, detail_address: e.target.value})}
                 />
@@ -226,12 +227,12 @@ export default function CompanyProfile() {
         </div>
 
         {/* --- 우측: 증빙 이미지 첨부 --- */}
-        <div className="space-y-8">
-          <div className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-6 h-full">
-            <h3 className="text-xl font-black text-gray-900 flex items-center gap-2 mb-8">
-              <ImageIcon className="text-blue-600" size={22} /> 첨부 이미지
+        <div className="space-y-6 md:space-y-8">
+          <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6 h-full">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-2 md:mb-4">
+              <ImageIcon className="text-blue-600" size={20} /> 첨부 이미지
             </h3>
-            <p className="text-xs font-bold text-gray-400 mb-6 leading-relaxed">
+            <p className="text-xs font-bold text-gray-400 mb-4 md:mb-6 leading-relaxed break-keep">
               등록된 이미지는 청구서 및 관련 서류 자동 생성 시 해당 영역에 자동으로 삽입됩니다.
             </p>
 
@@ -265,11 +266,11 @@ function ImageUploadBox({ title, icon, image, onChange }) {
   const fileInputRef = useRef(null);
 
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-extrabold text-gray-800 ml-1">{title}</label>
+    <div className="space-y-1.5 md:space-y-2">
+      <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">{title}</label>
       <div 
         onClick={() => fileInputRef.current.click()}
-        className={`relative w-full h-40 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden group
+        className={`relative w-full h-32 md:h-40 rounded-xl md:rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden group
           ${image ? 'border-blue-200 bg-white' : 'border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-blue-400'}
         `}
       >
@@ -282,13 +283,13 @@ function ImageUploadBox({ title, icon, image, onChange }) {
           <>
             <img src={image} alt={title} className="w-full h-full object-contain p-2" />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
-              <span className="text-white font-black text-sm flex items-center gap-2"><Upload size={16}/> 변경하기</span>
+              <span className="text-white font-black text-xs md:text-sm flex items-center gap-1.5 md:gap-2"><Upload size={16}/> 변경하기</span>
             </div>
           </>
         ) : (
           <div className="flex flex-col items-center text-gray-400 group-hover:text-blue-500 transition-all">
-            {icon}
-            <span className="text-xs font-bold mt-2">클릭하여 이미지 업로드</span>
+            <div className="md:scale-110 mb-1 md:mb-2">{icon}</div>
+            <span className="text-[11px] md:text-xs font-bold mt-1 md:mt-2">클릭하여 이미지 업로드</span>
           </div>
         )}
       </div>

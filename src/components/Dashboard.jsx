@@ -140,42 +140,43 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-10">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-10 font-sans">
       {/* 상단 헤더 */}
       <div>
-        <h1 className="text-4xl font-black text-gray-900 tracking-tighter">대시보드</h1>
-        <p className="text-gray-500 mt-2 font-medium">실시간 데이터 요약 및 분석 현황입니다.</p>
+        <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">대시보드</h1>
+        <p className="text-sm md:text-base text-gray-500 mt-2 font-medium">실시간 데이터 요약 및 분석 현황입니다.</p>
       </div>
 
-      {/* 요약 카드 그리드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* 🚨 요약 카드 그리드 (모바일 2열 배치 최적화) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         <StatCard title="누적 대상자" value={stats.totalCustomers.toLocaleString()} unit="명" icon={<Users className="text-blue-600" />} color="bg-blue-50" />
         <StatCard title="누적 청구건수" value={stats.totalClaims.toLocaleString()} unit="건" icon={<FileText className="text-purple-600" />} color="bg-purple-50" />
         <StatCard title="누적 청구금액" value={stats.totalAmount.toLocaleString()} unit="원" icon={<Banknote className="text-emerald-600" />} color="bg-emerald-50" />
         <StatCard title="대기중" value={stats.pendingClaims.toLocaleString()} unit="건" icon={<Clock className="text-orange-600" />} color="bg-orange-50" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         
         {/* 청구 현황 차트 영역 (좌측 2칸) */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-xl font-black text-gray-900 flex items-center gap-2">
+        <div className="lg:col-span-2 space-y-6 md:space-y-8">
+          <div className="bg-white p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20">
+            {/* 반응형 차트 헤더 (모바일 세로 배치) */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-8">
+              <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2">
                 <TrendingUp className="text-blue-600" size={20} /> 청구(건/금액) 추이
               </h3>
               
               {/* 💡 기간 설정 필터 (주간 / 월간) */}
-              <div className="flex bg-gray-100 rounded-xl p-1">
+              <div className="flex w-full sm:w-auto bg-gray-100 rounded-xl p-1">
                 <button 
                   onClick={() => setChartFilter('weekly')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${chartFilter === 'weekly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`flex-1 sm:flex-none px-4 py-2 text-xs md:text-sm font-bold transition-all ${chartFilter === 'weekly' ? 'bg-white text-blue-600 shadow-sm rounded-lg' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   주간
                 </button>
                 <button 
                   onClick={() => setChartFilter('monthly')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${chartFilter === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`flex-1 sm:flex-none px-4 py-2 text-xs md:text-sm font-bold transition-all ${chartFilter === 'monthly' ? 'bg-white text-blue-600 shadow-sm rounded-lg' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   월간
                 </button>
@@ -183,16 +184,16 @@ export default function Dashboard() {
             </div>
 
             {/* 💡 실제 연동된 듀얼 축 차트 (Recharts) */}
-            <div className="h-72 w-full">
+            <div className="h-60 md:h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+                <ComposedChart data={chartData} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af', fontWeight: 'bold' }} dy={10} />
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9ca3af', fontWeight: 'bold' }} dy={10} />
                   
                   {/* 건수 Y축 (좌측) */}
-                  <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={30} />
                   {/* 금액 Y축 (우측) */}
-                  <YAxis yAxisId="right" orientation="right" stroke="#10b981" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} tickFormatter={(val) => `${(val/10000).toLocaleString()}만`} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#10b981" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => `${(val/10000).toLocaleString()}만`} />
                   
                   <Tooltip 
                     cursor={{ fill: '#f8fafc' }}
@@ -202,60 +203,59 @@ export default function Dashboard() {
                       name === 'amount' ? '청구금액' : '청구건수'
                     ]}
                   />
-                  <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold' }} />
-                  <Bar yAxisId="left" dataKey="count" name="청구건수" fill="#3b82f6" barSize={24} radius={[6, 6, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="amount" name="청구금액" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                  <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '12px', fontWeight: 'bold' }} />
+                  <Bar yAxisId="left" dataKey="count" name="청구건수" fill="#3b82f6" barSize={16} radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="amount" name="청구금액" stroke="#10b981" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           {/* 최근 청구 리스트 */}
-          <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-xl overflow-hidden">
-            <div className="p-8 border-b border-gray-50 flex justify-between items-center">
-              <h3 className="text-xl font-black text-gray-900">최근 청구 내역</h3>
-              {/* 💡 청구관리 페이지로 라우팅 링크 (App.js의 라우트 경로명에 맞춰 '/claims' 수정 가능) */}
-              <Link to="/claims" className="text-blue-600 text-sm font-black flex items-center gap-1 hover:text-blue-800 transition-colors">
+          <div className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl overflow-hidden">
+            <div className="p-5 md:p-8 border-b border-gray-50 flex justify-between items-center">
+              <h3 className="text-lg md:text-xl font-black text-gray-900">최근 청구 내역</h3>
+              <Link to="/claims" className="text-blue-600 text-xs md:text-sm font-black flex items-center gap-1 hover:text-blue-800 transition-colors">
                 전체보기 <ChevronRight size={16} />
               </Link>
             </div>
             <div className="divide-y divide-gray-50">
               {recentClaims.length > 0 ? recentClaims.map((claim) => (
-                <div key={claim.id} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
-                      <Package size={20} />
+                <div key={claim.id} className="p-4 md:p-6 flex items-center justify-between hover:bg-gray-50 transition-all">
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-100 rounded-xl md:rounded-2xl flex items-center justify-center text-gray-400 shrink-0">
+                      <Package size={18} className="md:w-5 md:h-5" />
                     </div>
                     <div>
-                      <p className="font-black text-gray-900 leading-tight">{claim.customers?.name || '이름 없음'}</p>
-                      <p className="text-xs text-gray-400 font-bold mt-0.5">{claim.claim_date || claim.created_at.split('T')[0]}</p>
+                      <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px]">{claim.customers?.name || '이름 없음'}</p>
+                      <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-0.5">{claim.claim_date || claim.created_at.split('T')[0]}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-black text-gray-900">₩ {Number(claim.total_amount || 0).toLocaleString()}</p>
-                    <span className="text-[11px] font-black px-2.5 py-1 rounded-md bg-gray-100 text-gray-500 mt-1 inline-block">
+                  <div className="text-right flex flex-col items-end shrink-0">
+                    <p className="font-black text-sm md:text-base text-gray-900">₩ {Number(claim.total_amount || 0).toLocaleString()}</p>
+                    <span className="text-[9px] md:text-[11px] font-black px-2 py-0.5 md:px-2.5 md:py-1 rounded-md bg-gray-100 text-gray-500 mt-1 inline-block">
                       {claim.status === 'not_claimed' ? '대기중' : 
                        claim.status === 'claimed' ? '청구완료' : claim.status}
                     </span>
                   </div>
                 </div>
               )) : (
-                <div className="p-8 text-center text-gray-400 font-bold">최근 청구 내역이 없습니다.</div>
+                <div className="p-8 text-center text-xs md:text-sm text-gray-400 font-bold">최근 청구 내역이 없습니다.</div>
               )}
             </div>
           </div>
         </div>
 
         {/* 상태별 분포 및 알림 (우측 1칸) */}
-        <div className="space-y-8">
-          <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl">
-            <h3 className="text-xl font-black text-gray-900 flex items-center gap-2 mb-2">
+        <div className="space-y-6 md:space-y-8">
+          <div className="bg-white p-6 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-1 md:mb-2">
               <PieChart className="text-purple-600" size={20} /> 상태별 분포
             </h3>
-            <p className="text-xs font-bold text-gray-400 mb-8">이번달 기준 ({stats.thisMonthTotal}건)</p>
+            <p className="text-[11px] md:text-xs font-bold text-gray-400 mb-6 md:mb-8">이번달 기준 ({stats.thisMonthTotal}건)</p>
             
             {/* 💡 요청하신 이번달 기준 5가지 세부 상태 적용 */}
-            <div className="space-y-5">
+            <div className="space-y-4 md:space-y-5">
               <StatusRow label="지급완료" count={stats.statusCounts['지급완료']} total={stats.thisMonthTotal} color="bg-emerald-500" />
               <StatusRow label="청구완료" count={stats.statusCounts['청구완료']} total={stats.thisMonthTotal} color="bg-blue-500" />
               <StatusRow label="교부완료" count={stats.statusCounts['교부완료']} total={stats.thisMonthTotal} color="bg-purple-500" />
@@ -264,14 +264,14 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-indigo-600 p-8 rounded-[2.5rem] shadow-xl text-white">
-            <Activity className="mb-4" size={24} />
-            <h4 className="text-lg font-black leading-tight mb-2">업무 효율성 증가</h4>
-            <p className="text-indigo-100 text-xs font-medium leading-relaxed">
+          <div className="bg-indigo-600 p-6 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] shadow-xl text-white">
+            <Activity className="mb-3 md:mb-4" size={24} />
+            <h4 className="text-base md:text-lg font-black leading-tight mb-2">업무 효율성 증가</h4>
+            <p className="text-indigo-100 text-[11px] md:text-xs font-medium leading-relaxed">
               최근 한 달간 청구 처리 속도가 이전 대비 향상되었습니다. 대기 중인 {stats.pendingClaims}건의 미처리 서류를 확인해 보세요.
             </p>
             <Link to="/claims">
-              <button className="mt-6 w-full py-4 bg-white text-indigo-600 rounded-2xl font-black text-sm hover:bg-indigo-50 transition-all">
+              <button className="mt-5 md:mt-6 w-full py-3.5 md:py-4 bg-white text-indigo-600 rounded-xl md:rounded-2xl font-black text-xs md:text-sm hover:bg-indigo-50 transition-all">
                 대기 목록 확인
               </button>
             </Link>
@@ -285,14 +285,16 @@ export default function Dashboard() {
 // --- 보조 컴포넌트 ---
 function StatCard({ title, value, unit, icon, color }) {
   return (
-    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20 hover:scale-[1.02] transition-all">
-      <div className={`w-12 h-12 ${color} rounded-2xl flex items-center justify-center mb-6`}>
-        {icon}
+    <div className="bg-white p-4 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20 hover:scale-[1.02] transition-all flex flex-col justify-between">
+      <div className={`w-10 h-10 md:w-12 md:h-12 ${color} rounded-xl md:rounded-2xl flex items-center justify-center mb-3 md:mb-6 shrink-0`}>
+        <div className="scale-75 md:scale-100">{icon}</div>
       </div>
-      <p className="text-gray-400 text-xs font-black uppercase tracking-widest mb-1">{title}</p>
-      <div className="flex items-baseline gap-1">
-        <span className="text-3xl font-black text-gray-900 tracking-tighter truncate">{value}</span>
-        <span className="text-sm font-bold text-gray-400 whitespace-nowrap">{unit}</span>
+      <div>
+        <p className="text-gray-400 text-[10px] md:text-xs font-black uppercase tracking-widest mb-0.5 md:mb-1">{title}</p>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xl md:text-3xl font-black text-gray-900 tracking-tighter truncate">{value}</span>
+          <span className="text-[10px] md:text-sm font-bold text-gray-400 whitespace-nowrap">{unit}</span>
+        </div>
       </div>
     </div>
   );
@@ -301,12 +303,12 @@ function StatCard({ title, value, unit, icon, color }) {
 function StatusRow({ label, count, total, color }) {
   const percent = total > 0 ? (count / total) * 100 : 0;
   return (
-    <div className="space-y-2">
-      <div className="flex justify-between text-xs font-black">
+    <div className="space-y-1.5 md:space-y-2">
+      <div className="flex justify-between text-[11px] md:text-xs font-black">
         <span className="text-gray-500">{label}</span>
         <span className="text-gray-900">{count}건</span>
       </div>
-      <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+      <div className="w-full h-2 md:h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all duration-1000 rounded-full`} style={{ width: `${percent}%` }}></div>
       </div>
     </div>
