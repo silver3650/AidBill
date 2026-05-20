@@ -115,6 +115,7 @@ export default function Customers() {
     setProducts(prodData || []);
   }
 
+  // 🚨 AI 스마트 입력 오류 방지 완전 고도화 로직
   const processAiFile = async (file) => {
     if (!file) return; 
 
@@ -126,16 +127,29 @@ export default function Customers() {
 
     setIsExtracting(true);
     try {
-      const toBase64 = f => new Promise(res => { 
+      const toBase64 = f => new Promise((res, rej) => { 
         const r = new FileReader(); 
         r.readAsDataURL(f); 
         r.onload = () => res(r.result.split(',')[1]); 
+        r.onerror = (error) => rej(error);
       });
       const base64 = await toBase64(file);
-      const mimeType = file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : file.type;
+
+      // 파일의 MIME 타입 안전한 감지 (브라우저가 놓칠 경우를 대비)
+      let mimeType = file.type;
+      if (!mimeType) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'pdf') mimeType = 'application/pdf';
+        else if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
+        else if (ext === 'png') mimeType = 'image/png';
+        else mimeType = 'application/octet-stream';
+      }
+
+      // 원래 사용하셨던 API 키 복원
+      const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
       const promptText = `
-        첨부된 문서 데이터를 분석해서 대상자 정보를 추출해 줘.
+        첨부된 문서(복지카드, 신분증, 처방전 등) 데이터를 분석해서 대상자 정보를 추출해 줘.
         너는 무조건 부가 설명이나 마크다운 표현을 완전히 배제하고, 오직 아래의 JSON 포맷 규칙을 따르는 '순수 JSON 문자열'만 출력해야 해. 
         {
           "name": "추출된 성명",
@@ -150,7 +164,8 @@ export default function Customers() {
         }
       `;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=AIzaSyB8Wof3IId7UTEkD5OsOBPKfF9AjuRFpAk`, {
+      // gemini-1.5-flash 정식 모델명 사용
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -164,25 +179,37 @@ export default function Customers() {
       });
 
       const result = await res.json();
-      if (result.error) throw new Error(result.error.message);
+      
+      // API 통신 에러 명확히 캐치
+      if (!res.ok || result.error) {
+        throw new Error(result.error?.message || `API 요청 에러 발생 (코드: ${res.status})`);
+      }
 
-      const rawText = result.candidates[0].content.parts[0].text;
-      const cleanedText = rawText.replace(/`{3}json/gi, '').replace(/`{3}/g, '').trim();
+      // 텍스트 추출 시 옵셔널 체이닝으로 런타임 에러 완전 차단
+      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) {
+        throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
+      }
+
+      // 마크다운 흔적 완전 제거 및 정제
+      const cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       
       if (jsonMatch) {
         const extractedData = JSON.parse(jsonMatch[0]);
+        // 성별 보정 (여성 -> 여)
         if (extractedData.gender && !['남', '여'].includes(extractedData.gender)) {
           extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
         }
         setFormData(prev => ({ ...prev, ...extractedData }));
+        alert('✅ AI 스마트 입력이 성공적으로 완료되었습니다.');
       } else {
-        throw new Error('유효한 JSON 구조 도출 실패');
+        throw new Error('유효한 형태의 데이터(JSON)를 추출하지 못했습니다.');
       }
 
     } catch (err) { 
-      console.error(err);
-      alert(`❌ AI 문서 분석 실패\n\n원인: ${err.message || '엔드포인트 연동 지연'}`); 
+      console.error("[AI 추출 프로세스 오류]:", err);
+      alert(`❌ AI 문서 분석 실패\n\n원인: ${err.message || '서버 연동 오류'}`); 
     } finally { 
       setIsExtracting(false); 
       if(fileInputRef.current) fileInputRef.current.value = ''; 
@@ -280,21 +307,40 @@ export default function Customers() {
     setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null }); 
   };
 
+  // 🚨 좌표 계산 통합 (모바일 터치 + PC 마우스 대응)
+  const getCoordinates = (e) => {
+    const c = canvasRef.current;
+    if (!c) return { x: 0, y: 0 };
+    const r = c.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - r.left, y: clientY - r.top };
+  };
+
   const startDrawing = (e) => { 
-    const c = canvasRef.current; if(!c) return; 
-    const ctx = c.getContext('2d'); const r = c.getBoundingClientRect(); 
-    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - r.left; 
-    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - r.top; 
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineWidth = 2; setIsDrawing(true); 
+    const { x, y } = getCoordinates(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineWidth = 2;
+    setIsDrawing(true);
   };
+
   const draw = (e) => { 
-    if (!isDrawing) return; 
-    const c = canvasRef.current; const ctx = c.getContext('2d'); const r = c.getBoundingClientRect(); 
-    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - r.left; 
-    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - r.top; 
-    ctx.lineTo(x, y); ctx.stroke(); e.preventDefault(); 
+    if (!isDrawing) return;
+    if (e.type === 'touchmove') e.preventDefault(); // 터치 스크롤 방지
+    const { x, y } = getCoordinates(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.lineTo(x, y);
+    ctx.stroke();
   };
-  const stopDrawing = () => { if (isDrawing) { setIsDrawing(false); setFormData(p => ({ ...p, signature: canvasRef.current.toDataURL() })); } };
+
+  const stopDrawing = () => { 
+    if (isDrawing) { 
+      setIsDrawing(false); 
+      setFormData(p => ({ ...p, signature: canvasRef.current.toDataURL() })); 
+    } 
+  };
 
   const renderLifespanStatus = (c) => {
     const claim = c.latestClaim;
@@ -532,7 +578,20 @@ export default function Customers() {
               <div className="space-y-4 pt-4 border-t font-black">
                 <div className="flex justify-between items-center"><span>대상자 서명</span><button onClick={() => { const ctx = canvasRef.current.getContext('2d'); ctx.clearRect(0,0,700,160); setFormData(p => ({...p, signature: null})) }} className="text-red-500 text-xs font-black">초기화</button></div>
                 <div className="w-full h-40 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200 relative overflow-hidden">
-                  <canvas ref={canvasRef} width={700} height={160} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} className="w-full h-full cursor-crosshair" />
+                  <canvas 
+                    ref={canvasRef} 
+                    width={700} 
+                    height={160} 
+                    onMouseDown={startDrawing} 
+                    onMouseMove={draw} 
+                    onMouseUp={stopDrawing} 
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing} 
+                    onTouchMove={draw} 
+                    onTouchEnd={stopDrawing} 
+                    className="w-full h-full cursor-crosshair touch-none"
+                    style={{ touchAction: 'none' }}
+                  />
                 </div>
               </div>
             </div>
@@ -592,7 +651,7 @@ export default function Customers() {
                 )}
               </div>
 
-              {/* 물류 인프라 정보 배정 세션 (ReferenceError 완벽 수정) */}
+              {/* 물류 인프라 정보 배정 세션 */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs text-gray-400 ml-1">배송 수단</label>

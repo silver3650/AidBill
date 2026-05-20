@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, Truck, X, Package, Mail, Printer, Edit3, Trash2, 
-  CheckSquare, Square, Eye, Send, Clock, Calendar, Filter, RefreshCw, ArrowLeft, Plus, ImagePlus, CheckCircle2, Camera, ChevronLeft, ChevronRight, AlertTriangle
+  CheckSquare, Square, Eye, Send, Clock, Calendar, Filter, RefreshCw, ArrowLeft, Plus, ImagePlus, CheckCircle2, Camera, ChevronLeft, ChevronRight, AlertTriangle, FileText
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import html2canvas from 'html2canvas';
@@ -54,7 +54,7 @@ export default function Claims() {
   const [selectedClaim, setSelectedClaim] = useState(null);
 
   const [newData, setNewData] = useState({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0 });
-  const [editData, setEditData] = useState({ claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '' });
+  const [editData, setEditData] = useState({ claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', notes: '' });
   const [photoFiles, setPhotoFiles] = useState([]); 
 
   const [emailData, setEmailData] = useState({ recipient: '', sender: '', subject: '', content: '', files: {} });
@@ -301,7 +301,8 @@ export default function Claims() {
       total_amount: claim.total_amount || 0,
       status: claim.status || '대기 중',
       carrier: claim.carrier || 'CJ대한통운',
-      tracking_no: claim.tracking_no || ''
+      tracking_no: claim.tracking_no || '',
+      notes: claim.notes || ''
     });
     setPhotoFiles(claim.receipt_photos || []);
     setActiveModal('edit');
@@ -359,12 +360,13 @@ export default function Claims() {
       status: newStatus,
       carrier: editData.carrier,
       tracking_no: editData.tracking_no,
-      receipt_photos: photoFiles
+      receipt_photos: photoFiles,
+      notes: editData.notes
     };
 
     const { error } = await supabase.from('claims').update(payload).eq('id', selectedClaim.id);
     if (!error) { 
-      alert('내역 수정 및 사진 첨부가 완료되었습니다.'); 
+      alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
       fetchData(); 
     } else {
@@ -450,7 +452,6 @@ export default function Claims() {
     const currentCompanyName = companyInfo.company_name || '(주)케어플러스';
     const currentCustomerName = claim.customers?.name || '대상자';
     const currentContactNumber = companyInfo.contact_number || '1833-6365';
-    // 이메일 정보 가져오기 (없을 경우 기본값)
     const currentEmail = companyInfo.email || '';
 
     setEmailData({ 
@@ -458,7 +459,6 @@ export default function Claims() {
       sender: companyInfo.email, 
       files: initialFiles,
       subject: `장애인 보조기기 교부 관련 비용청구서 송부의 건(${currentCustomerName})`, 
-      // 이메일 내용 하단 서명에 업체명 -> 이메일 -> 전화번호 순으로 삽입
       content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n참고로 세금계산서는 본 메일과 별개로 발행되어 발송될 예정입니다.\n\n서류를 검토하신 후 의문 사항이 있으시거나 보완이 필요한 점이 있다면\n아래 담당자 연락처로 언제든지 연락 주시기 바랍니다.\n\n감사합니다.\n\n${currentCompanyName} 담당자 배상\nEmail: ${currentEmail}\nTel: ${currentContactNumber}`
     });
     setIsDocPreview(false); setActiveModal('email');
@@ -834,6 +834,12 @@ export default function Claims() {
                     <td className="py-3 px-5 align-middle">
                       <div className="font-black text-gray-900">{claim.customers?.name}</div>
                       <div className="text-[10px] text-gray-500 font-bold truncate mt-0.5">{claim.customers?.local_governments?.name || '지자체 미정'}</div>
+                      {/* 특이사항 뱃지 표시 */}
+                      {claim.notes && (
+                        <div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help">
+                          <FileText size={10} /> 특이사항 있음
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-5 text-indigo-900 font-black text-xs leading-snug break-keep align-middle">
                       {isProductMissing ? (
@@ -919,7 +925,7 @@ export default function Claims() {
                 );
               })}
               {filteredClaims.length === 0 && (
-                <tr><td colSpan="6" className="py-12 text-center text-gray-400 font-bold text-sm">등록된 청구 내역이 없습니다.</td></tr>
+                <tr><td colSpan="8" className="py-12 text-center text-gray-400 font-bold text-sm">등록된 청구 내역이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
@@ -1109,6 +1115,17 @@ export default function Claims() {
                         </select>
                         <input className="w-2/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
                       </div>
+                    </div>
+
+                    {/* ✅ 특이사항 및 지연 사유 추가 부분 */}
+                    <div>
+                      <div className="text-xs text-rose-600 font-black border-b pb-2 mb-3 mt-2 flex items-center gap-1.5"><FileText size={14}/> 특이사항 및 지연 사유</div>
+                      <textarea 
+                        className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-medium text-gray-800 resize-none h-24 focus:bg-white focus:border-rose-300 focus:ring-2 focus:ring-rose-100 transition-all placeholder:text-gray-400" 
+                        placeholder="정산 지연 사유, 고객/지자체 요청사항, 서류 반려 등 특이사항을 자유롭게 입력하세요."
+                        value={editData.notes}
+                        onChange={e => setEditData({...editData, notes: e.target.value})}
+                      />
                     </div>
                   </div>
 
