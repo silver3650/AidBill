@@ -115,7 +115,7 @@ export default function Customers() {
     setProducts(prodData || []);
   }
 
-  // 🚨 AI 스마트 입력 오류 방지 완전 고도화 로직
+  // 🚨 AI 스마트 입력
   const processAiFile = async (file) => {
     if (!file) return; 
 
@@ -135,7 +135,6 @@ export default function Customers() {
       });
       const base64 = await toBase64(file);
 
-      // 파일의 MIME 타입 안전한 감지 (브라우저가 놓칠 경우를 대비)
       let mimeType = file.type;
       if (!mimeType) {
         const ext = file.name.split('.').pop().toLowerCase();
@@ -145,7 +144,6 @@ export default function Customers() {
         else mimeType = 'application/octet-stream';
       }
 
-      // 원래 사용하셨던 API 키 복원
       const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
       const promptText = `
@@ -164,7 +162,6 @@ export default function Customers() {
         }
       `;
 
-      // gemini-1.5-flash 정식 모델명 사용
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
@@ -180,24 +177,20 @@ export default function Customers() {
 
       const result = await res.json();
       
-      // API 통신 에러 명확히 캐치
       if (!res.ok || result.error) {
         throw new Error(result.error?.message || `API 요청 에러 발생 (코드: ${res.status})`);
       }
 
-      // 텍스트 추출 시 옵셔널 체이닝으로 런타임 에러 완전 차단
       const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) {
         throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
       }
 
-      // 마크다운 흔적 완전 제거 및 정제
       const cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       
       if (jsonMatch) {
         const extractedData = JSON.parse(jsonMatch[0]);
-        // 성별 보정 (여성 -> 여)
         if (extractedData.gender && !['남', '여'].includes(extractedData.gender)) {
           extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
         }
@@ -261,7 +254,6 @@ export default function Customers() {
     }
   }
 
-  // 🚨 수량(quantity) 필드 DB 적재 연동 완료
   async function handleGrantComplete() {
     if (!grantData.product_id) {
       alert('⚠️ 검색창 하단에 뜨는 상품 목록에서 원하시는 상품을 마우스로 클릭해서 선택해주세요!');
@@ -275,7 +267,7 @@ export default function Customers() {
       status: '교부 완료',
       claim_date: new Date().toISOString().split('T')[0],
       total_amount: grantData.total_amount,
-      quantity: grantData.quantity // 🚨 수량 데이터 컬럼 맵핑 주입
+      quantity: grantData.quantity
     }]);
     
     if (error) {
@@ -284,7 +276,6 @@ export default function Customers() {
     } else {
       alert('✅ 교부 처리가 완료되었습니다! 청구 관리 탭에서 확인해주세요.');
       setIsGrantModalOpen(false); 
-      // 모달 데이터 리셋
       setGrantData({ product_id: '', product_name: '', category: '', carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false });
       setProductSearch('');
       fetchData();
@@ -297,7 +288,9 @@ export default function Customers() {
     setTimeout(() => { 
       if (c.signature && canvasRef.current) { 
         const ctx = canvasRef.current.getContext('2d'); 
-        const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0); img.src = c.signature; 
+        const img = new Image(); 
+        img.onload = () => ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height); 
+        img.src = c.signature; 
       } 
     }, 200);
   };
@@ -307,28 +300,44 @@ export default function Customers() {
     setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null }); 
   };
 
-  // 🚨 좌표 계산 통합 (모바일 터치 + PC 마우스 대응)
+  // 🚨 [핵심] 모바일 터치 + PC 마우스 대응 좌표 계산 로직 완벽 최적화
   const getCoordinates = (e) => {
     const c = canvasRef.current;
     if (!c) return { x: 0, y: 0 };
+    
+    // 화면에 보여지는 실제 캔버스의 크기와 위치
     const r = c.getBoundingClientRect();
+    
+    // 해상도(width/height)와 실제 렌더링된 크기(getBoundingClientRect)의 비율 계산 (핵심 보정 로직)
+    const scaleX = c.width / r.width;
+    const scaleY = c.height / r.height;
+
+    // 터치(모바일) 이벤트인지, 마우스(PC) 이벤트인지 구별하여 좌표 추출
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - r.left, y: clientY - r.top };
+    
+    // 비율을 곱해주어 어긋남 없는 정확한 캔버스 내부 좌표 반환
+    return { 
+      x: (clientX - r.left) * scaleX, 
+      y: (clientY - r.top) * scaleY 
+    };
   };
 
   const startDrawing = (e) => { 
+    if (e.cancelable) e.preventDefault();
     const { x, y } = getCoordinates(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 4; // 모바일에서도 선명하게 보이도록 두께 상향
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     setIsDrawing(true);
   };
 
   const draw = (e) => { 
     if (!isDrawing) return;
-    if (e.type === 'touchmove') e.preventDefault(); // 터치 스크롤 방지
+    if (e.cancelable) e.preventDefault(); // 서명 중 화면 스크롤 완벽 방지
     const { x, y } = getCoordinates(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.lineTo(x, y);
@@ -338,7 +347,7 @@ export default function Customers() {
   const stopDrawing = () => { 
     if (isDrawing) { 
       setIsDrawing(false); 
-      setFormData(p => ({ ...p, signature: canvasRef.current.toDataURL() })); 
+      setFormData(p => ({ ...p, signature: canvasRef.current.toDataURL('image/png') })); 
     } 
   };
 
@@ -350,7 +359,7 @@ export default function Customers() {
     
     if (c.remainingDays === Infinity) return (
       <div>
-        <p className="text-[13px] font-black text-gray-800 line-clamp-1">{deviceName}</p>
+        <p className="text-sm font-black text-gray-800 line-clamp-1">{deviceName}</p>
         <span className="text-[10px] text-gray-400 font-bold">내구연한 미지정 품목</span>
       </div>
     );
@@ -369,7 +378,7 @@ export default function Customers() {
 
     return (
       <div className="flex flex-col gap-1">
-        <p className="text-[13px] font-black text-gray-800 line-clamp-1" title={deviceName}>
+        <p className="text-sm font-black text-gray-800 line-clamp-1" title={deviceName}>
           {deviceName}
         </p>
         <div className="flex items-center gap-1">
@@ -391,21 +400,64 @@ export default function Customers() {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
-      <div className="flex justify-between items-end">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
+      
+      {/* 헤더 및 신규등록 버튼 (모바일 반응형) */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tighter">대상자 관리</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">대상자 관리</h1>
           <p className="text-gray-500 mt-2 font-bold flex items-center gap-2"><Users size={18} className="text-blue-600" /> 총 {customers.length}명 등록됨</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black shadow-xl flex items-center gap-2 hover:scale-105 transition-all"><Plus size={22} /> 신규 대상자 등록</button>
+        <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all">
+          <Plus size={20} /> 신규 대상자 등록
+        </button>
       </div>
 
-      <div className="bg-white p-2 rounded-[2rem] border border-gray-100 shadow-sm flex items-center group focus-within:border-blue-200 transition-all font-bold">
-        <Search className="ml-6 text-gray-400" size={20} />
-        <input type="text" placeholder="성함 또는 연락처 검색..." className="w-full p-5 outline-none bg-transparent" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+      <div className="bg-white p-2 rounded-2xl md:rounded-[2rem] border border-gray-100 shadow-sm flex items-center focus-within:border-blue-200 transition-all font-bold">
+        <Search className="ml-4 md:ml-6 text-gray-400" size={20} />
+        <input type="text" placeholder="성함 또는 연락처 검색..." className="w-full p-4 md:p-5 outline-none bg-transparent" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden mt-6">
+      {/* 🚨 [핵심] 모바일 전용 UI: 카드형 뷰 (서명 버튼 최상단 배치) */}
+      <div className="block md:hidden space-y-4">
+        {currentItems.length > 0 ? (
+          currentItems.map((c) => (
+            <div key={c.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h3 className="text-lg font-black text-gray-900">{c.name} <span className="text-xs text-gray-400 font-bold ml-1">({c.gender})</span></h3>
+                  <p className="text-[11px] font-bold text-blue-600 mt-0.5">{c.local_governments?.name || '관할 미지정'}</p>
+                </div>
+                {/* 우측 상단 퀵 액션 (배송, 삭제) */}
+                <div className="flex gap-1.5">
+                  <button onClick={() => { setSelectedCustomer(c); setIsGrantModalOpen(true); }} className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center"><Truck size={14}/></button>
+                  <button onClick={() => handleDeleteCustomer(c.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={14}/></button>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-xl p-3 mb-4">
+                {renderLifespanStatus(c)}
+              </div>
+
+              {/* ⭐️ 가장 중요한 모바일 서명 버튼 ⭐️ */}
+              {!c.signature ? (
+                <button onClick={() => openEditModal(c)} className="w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl border border-indigo-100 shadow-sm flex items-center justify-center gap-2 animate-pulse">
+                  <PenTool size={16} /> 대상자 서명하기
+                </button>
+              ) : (
+                <button onClick={() => openEditModal(c)} className="w-full py-3 bg-white text-gray-600 font-black rounded-xl border border-gray-200 shadow-sm flex items-center justify-center gap-2">
+                  <Edit3 size={16} /> 정보 및 서명 수정
+                </button>
+              )}
+            </div>
+          ))
+        ) : (
+           <div className="p-10 text-center text-gray-400 font-bold bg-white rounded-2xl border border-gray-100">검색 결과가 없습니다.</div>
+        )}
+      </div>
+
+      {/* PC 전용 UI: 테이블 뷰 (기존 UI 100% 유지) */}
+      <div className="hidden md:block bg-white border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden mt-6">
         <table className="w-full text-left text-sm font-bold">
           <thead>
             <tr className="bg-gray-50/50 border-b border-gray-50 text-[11px] font-black text-gray-400 uppercase tracking-widest">
@@ -424,16 +476,10 @@ export default function Customers() {
                 
                 return (
                   <tr key={c.id} className="hover:bg-blue-50/20 transition-all">
-                    <td className="p-7 text-center text-gray-400 font-black">
-                      {serialNumber}
-                    </td>
+                    <td className="p-7 text-center text-gray-400 font-black">{serialNumber}</td>
                     <td className="p-7 text-gray-900 font-black">{c.name} ({c.gender})</td>
                     <td className="p-7 text-gray-700">{c.local_governments?.name || '미지정'}</td>
-                    
-                    <td className="p-7">
-                      {renderLifespanStatus(c)}
-                    </td>
-
+                    <td className="p-7">{renderLifespanStatus(c)}</td>
                     <td className="p-7 text-center">{c.signature ? <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-md text-xs font-black">완료</span> : <span className="bg-red-50 text-red-600 px-3 py-1 rounded-md text-xs font-black">필요</span>}</td>
                     <td className="p-7 text-center">
                       <div className="flex justify-center gap-2">
@@ -447,67 +493,67 @@ export default function Customers() {
               })
             ) : (
               <tr>
-                <td colSpan="6" className="p-10 text-center text-gray-400 font-bold">
-                  검색된 대상자가 없습니다.
-                </td>
+                <td colSpan="6" className="p-10 text-center text-gray-400 font-bold">검색된 대상자가 없습니다.</td>
               </tr>
             )}
           </tbody>
         </table>
-
-        {totalPages > 1 && (
-          <div className="p-6 bg-white border-t border-gray-50 flex items-center justify-center gap-2">
-            <button 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-              disabled={currentPage === 1}
-              className="p-2 rounded-xl text-gray-400 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            
-            <div className="flex gap-1">
-              {[...Array(totalPages)].map((_, i) => (
-                <button 
-                  key={i} 
-                  onClick={() => setCurrentPage(i + 1)} 
-                  className={`w-10 h-10 rounded-xl font-black text-sm transition-all ${
-                    currentPage === i + 1 
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
-                      : 'bg-white text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-
-            <button 
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-              disabled={currentPage === totalPages}
-              className="p-2 rounded-xl text-gray-400 hover:bg-gray-50 hover:text-gray-900 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
-            >
-              <ChevronRight size={20} />
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* 대상자 추가/수정 모달 */}
+      {/* 페이지네이션 (공통) */}
+      {totalPages > 1 && (
+        <div className="py-4 md:p-6 bg-transparent md:bg-white border-none md:border-t md:border-gray-50 flex items-center justify-center gap-2">
+          <button 
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+            disabled={currentPage === 1}
+            className="p-2 rounded-xl text-gray-400 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          
+          <div className="flex gap-1">
+            {[...Array(totalPages)].map((_, i) => (
+              <button 
+                key={i} 
+                onClick={() => setCurrentPage(i + 1)} 
+                className={`w-10 h-10 rounded-xl font-black text-sm transition-all ${
+                  currentPage === i + 1 
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+
+          <button 
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-xl text-gray-400 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
+      )}
+
+      {/* 대상자 추가/수정 모달 (모바일 반응형 패딩 적용) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xl overflow-y-auto">
-          <div className="bg-white w-full max-w-3xl rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 flex flex-col max-h-[95vh] font-bold">
-            <div className="p-10 border-b bg-blue-50/30 flex justify-between items-center">
-              <h4 className="text-2xl font-black">{editingId ? '대상자 정보 수정' : '신규 대상자 등록'}</h4>
-              <button onClick={closeModal}><X size={24}/></button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 bg-black/60 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white w-full max-w-3xl rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 flex flex-col max-h-[95vh] font-bold">
+            <div className="p-6 md:p-10 border-b bg-blue-50/30 flex justify-between items-center shrink-0">
+              <h4 className="text-xl md:text-2xl font-black">{editingId ? '대상자 정보 수정' : '신규 대상자 등록'}</h4>
+              <button onClick={closeModal} className="p-2 rounded-full hover:bg-white"><X size={24}/></button>
             </div>
-            <div className="p-10 space-y-8 overflow-y-auto flex-1 custom-scrollbar">
+            
+            <div className="p-5 md:p-10 space-y-6 md:space-y-8 overflow-y-auto flex-1 custom-scrollbar">
               
               {!editingId && (
                 <div 
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`relative overflow-hidden rounded-[2rem] border-2 transition-all flex items-center justify-between p-6 ${
+                  className={`relative overflow-hidden rounded-2xl md:rounded-[2rem] border-2 transition-all flex flex-col md:flex-row items-center justify-between p-5 md:p-6 gap-4 ${
                     isDragging 
                       ? 'border-indigo-500 bg-indigo-50/80 shadow-inner scale-[0.99]' 
                       : 'border-transparent bg-gradient-to-r from-indigo-500 via-indigo-600 to-blue-700 shadow-lg'
@@ -516,21 +562,21 @@ export default function Customers() {
                   <input type="file" accept="image/*,application/pdf" className="hidden" ref={fileInputRef} onChange={(e) => processAiFile(e.target.files[0])} />
                   
                   {!isDragging && (
-                    <div className="absolute -top-10 -right-4 p-4 opacity-10 pointer-events-none">
+                    <div className="absolute -top-10 -right-4 p-4 opacity-10 pointer-events-none hidden md:block">
                       <Sparkles size={160} />
                     </div>
                   )}
 
-                  <div className="flex items-center gap-5 z-10">
-                    <div className={`p-4 rounded-2xl backdrop-blur-md shadow-inner transition-colors ${isDragging ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>
+                  <div className="flex items-center gap-4 z-10 w-full md:w-auto text-center md:text-left">
+                    <div className={`p-4 rounded-2xl backdrop-blur-md shadow-inner transition-colors hidden md:block ${isDragging ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>
                       <FileText size={28} />
                     </div>
-                    <div>
-                      <h5 className={`text-xl font-black mb-1 tracking-tight transition-colors ${isDragging ? 'text-indigo-900' : 'text-white'}`}>
+                    <div className="w-full">
+                      <h5 className={`text-lg md:text-xl font-black mb-1 tracking-tight transition-colors ${isDragging ? 'text-indigo-900' : 'text-white'}`}>
                         {isDragging ? '여기에 드롭하여 스캔 시작!' : 'AI 서류 스마트 입력'}
                       </h5>
-                      <p className={`text-[13px] font-bold max-w-[280px] break-keep transition-colors ${isDragging ? 'text-indigo-700' : 'text-indigo-100'}`}>
-                        복지카드, 처방전, 신분증을 드래그하거나 버튼을 클릭하세요. (PDF, JPG 지원)
+                      <p className={`text-xs md:text-[13px] font-bold max-w-full md:max-w-[280px] break-keep transition-colors ${isDragging ? 'text-indigo-700' : 'text-indigo-100'}`}>
+                        복지카드, 처방전, 신분증을 첨부하세요. (PDF, JPG)
                       </p>
                     </div>
                   </div>
@@ -538,7 +584,7 @@ export default function Customers() {
                   <button 
                     onClick={() => !isExtracting && fileInputRef.current.click()} 
                     disabled={isExtracting} 
-                    className={`z-10 px-6 py-4 rounded-2xl font-black flex items-center justify-center gap-2 transition-all ${
+                    className={`w-full md:w-auto z-10 px-6 py-3.5 md:py-4 rounded-xl md:rounded-2xl font-black flex items-center justify-center gap-2 transition-all ${
                       isDragging 
                         ? 'bg-indigo-100 text-indigo-400 pointer-events-none shadow-none opacity-0' 
                         : 'bg-white text-indigo-600 hover:bg-indigo-50 hover:scale-[1.02] active:scale-95 shadow-xl disabled:opacity-70 disabled:hover:scale-100'
@@ -553,64 +599,86 @@ export default function Customers() {
                 </div>
               )}
               
-              <div className="grid grid-cols-3 gap-6">
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">성함</label><input placeholder="성함" className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">성별</label><div className="flex bg-gray-50 p-1 rounded-2xl">{['남', '여'].map(g => (<button key={g} onClick={() => setFormData({...formData, gender: g})} className={`flex-1 py-3 rounded-xl transition-all ${formData.gender === g ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>{g}</button>))}</div></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">생년월일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} /></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">성함</label><input placeholder="성함" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">성별</label><div className="flex bg-gray-50 p-1 rounded-xl md:rounded-2xl">{['남', '여'].map(g => (<button key={g} onClick={() => setFormData({...formData, gender: g})} className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all ${formData.gender === g ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>{g}</button>))}</div></div>
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">생년월일</label><input type="date" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} /></div>
               </div>
 
-              <div className="grid grid-cols-3 gap-6">
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">지자체</label><select className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.local_gov_id} onChange={e => setFormData({...formData, local_gov_id: e.target.value})}><option value="">지자체 선택</option>{govs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">장애유형</label><input placeholder="장애유형 (예: 지체)" className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.disability_type} onChange={e => setFormData({...formData, disability_type: e.target.value})} /></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">장애정도</label><select className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.disability_level} onChange={e => setFormData({...formData, disability_level: e.target.value})}><option value="심함">심함</option><option value="심하지 않음">심하지 않음</option></select></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">지자체</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.local_gov_id} onChange={e => setFormData({...formData, local_gov_id: e.target.value})}><option value="">지자체 선택</option>{govs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애유형</label><input placeholder="장애유형 (예: 지체)" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_type} onChange={e => setFormData({...formData, disability_type: e.target.value})} /></div>
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애정도</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_level} onChange={e => setFormData({...formData, disability_level: e.target.value})}><option value="심함">심함</option><option value="심하지 않음">심하지 않음</option></select></div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">연락처</label><input placeholder="연락처" className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">우편번호</label><div className="flex gap-2"><input readOnly placeholder="우편번호" className="flex-1 bg-gray-50 p-4 rounded-2xl" value={formData.zip_code} /><button onClick={() => new window.daum.Postcode({ oncomplete: d => setFormData(p => ({ ...p, zip_code: d.zonecode, address: d.address })) }).open()} className="px-6 bg-gray-800 text-white rounded-2xl font-black hover:bg-black transition-colors">검색</button></div></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">연락처</label><input placeholder="연락처" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-400 ml-1">우편번호</label>
+                  <div className="flex gap-2">
+                    <input readOnly placeholder="우편번호" className="flex-1 bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl" value={formData.zip_code} />
+                    <button onClick={() => new window.daum.Postcode({ oncomplete: d => setFormData(p => ({ ...p, zip_code: d.zonecode, address: d.address })) }).open()} className="px-5 bg-gray-800 text-white rounded-xl md:rounded-2xl font-black hover:bg-black transition-colors">검색</button>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">주소</label><input readOnly placeholder="주소" className="w-full bg-gray-50 p-4 rounded-2xl" value={formData.address} /></div>
-                <div className="space-y-2"><label className="text-xs text-gray-400 ml-1">상세주소</label><input placeholder="상세주소" className="w-full bg-gray-50 p-4 rounded-2xl outline-none" value={formData.detail_address} onChange={e => setFormData({...formData, detail_address: e.target.value})} /></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">주소</label><input readOnly placeholder="주소" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl" value={formData.address} /></div>
+                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">상세주소</label><input placeholder="상세주소" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.detail_address} onChange={e => setFormData({...formData, detail_address: e.target.value})} /></div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t font-black">
-                <div className="flex justify-between items-center"><span>대상자 서명</span><button onClick={() => { const ctx = canvasRef.current.getContext('2d'); ctx.clearRect(0,0,700,160); setFormData(p => ({...p, signature: null})) }} className="text-red-500 text-xs font-black">초기화</button></div>
-                <div className="w-full h-40 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200 relative overflow-hidden">
+              {/* 🚨 [핵심] 모바일 최적화 서명 영역 */}
+              <div className="space-y-3 pt-6 border-t font-black">
+                <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-t-xl md:rounded-t-2xl">
+                  <span className="text-indigo-900 flex items-center gap-1.5"><PenTool size={16}/> 대상자 정자 서명</span>
+                  <button onClick={() => { 
+                    const ctx = canvasRef.current.getContext('2d'); 
+                    ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height); 
+                    setFormData(p => ({...p, signature: null})) 
+                  }} className="text-rose-500 text-xs font-black bg-white px-3 py-1.5 rounded-lg border border-rose-100 shadow-sm">
+                    서명 지우기
+                  </button>
+                </div>
+                
+                {/* 모바일 화면에서는 세로 비율을 적절히 조절하여 서명 편의성 확보 */}
+                <div className="w-full aspect-[2/1] md:h-48 bg-white rounded-b-xl md:rounded-b-2xl border-x-2 border-b-2 border-indigo-100 relative overflow-hidden shadow-inner touch-none">
+                  {/* 해상도는 700x300 고해상도로 렌더링하고 css로 100% 채움 */}
                   <canvas 
                     ref={canvasRef} 
-                    width={700} 
-                    height={160} 
-                    onMouseDown={startDrawing} 
-                    onMouseMove={draw} 
-                    onMouseUp={stopDrawing} 
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing} 
-                    onTouchMove={draw} 
-                    onTouchEnd={stopDrawing} 
-                    className="w-full h-full cursor-crosshair touch-none"
+                    width={700} height={300}
+                    onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} 
+                    className="w-full h-full cursor-crosshair"
                     style={{ touchAction: 'none' }}
                   />
+                  {!formData.signature && !isDrawing && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-gray-300 text-sm opacity-50">
+                      가운데 영역에 서명해 주세요.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="p-10 bg-gray-50 flex gap-4 font-black shrink-0">
-              <button onClick={closeModal} className="flex-1 py-5 bg-white border border-gray-200 rounded-2xl text-gray-400 hover:bg-gray-100 transition-colors">취소</button>
-              <button onClick={handleSave} className="flex-1 py-5 bg-blue-600 text-white rounded-2xl shadow-xl hover:bg-blue-700 transition-colors">정보 저장하기</button>
+
+            <div className="p-5 md:p-8 bg-gray-50 flex gap-3 md:gap-4 font-black shrink-0 border-t border-gray-100">
+              <button onClick={closeModal} className="flex-1 py-4 md:py-5 bg-white border border-gray-200 rounded-xl md:rounded-2xl text-gray-400 hover:bg-gray-100 transition-colors">취소</button>
+              <button onClick={handleSave} className="flex-1 py-4 md:py-5 bg-blue-600 text-white rounded-xl md:rounded-2xl shadow-xl hover:bg-blue-700 transition-colors">정보 저장하기</button>
             </div>
           </div>
         </div>
       )}
       
-      {/* 보조기기 교부 모달 */}
+      {/* 보조기기 교부 모달 (모바일 반응형 패딩 적용) */}
       {isGrantModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xl animate-in fade-in font-bold">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
-            <div className="p-8 border-b bg-blue-600 text-white flex justify-between items-center font-black"><h4>보조기기 교부</h4><button onClick={() => setIsGrantModalOpen(false)}><X/></button></div>
-            <div className="p-8 space-y-6">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in font-bold">
+          <div className="bg-white w-full max-w-lg rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="p-6 md:p-8 border-b bg-blue-600 text-white flex justify-between items-center font-black shrink-0">
+              <h4 className="text-lg md:text-xl">보조기기 교부</h4>
+              <button onClick={() => setIsGrantModalOpen(false)}><X/></button>
+            </div>
+            
+            <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
               
-              {/* 품목 선택 세션 */}
               <div className="space-y-2 relative">
                 <label className="text-xs text-gray-400 ml-1 font-black">품목 선택</label>
                 <div className="relative">
@@ -618,7 +686,7 @@ export default function Customers() {
                   <input 
                     type="text" 
                     placeholder="상품명 검색..." 
-                    className="w-full bg-gray-50 pl-12 pr-4 py-4 rounded-2xl border-none outline-none font-black" 
+                    className="w-full bg-gray-50 pl-11 pr-4 py-3.5 md:py-4 rounded-xl md:rounded-2xl border-none outline-none font-black" 
                     value={productSearch} 
                     onChange={(e) => {
                       setProductSearch(e.target.value);
@@ -627,12 +695,11 @@ export default function Customers() {
                   />
                 </div>
                 {productSearch.trim() && productSearch !== grantData.product_name && (
-                  <div className="absolute z-50 w-full mt-2 bg-white border border-gray-100 rounded-2xl shadow-2xl max-h-48 overflow-y-auto p-2 custom-scrollbar">
+                  <div className="absolute z-50 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-2xl max-h-48 overflow-y-auto p-2 custom-scrollbar">
                     {products.filter(p => p.name.includes(productSearch)).map(p => (
                       <button 
                         key={p.id} 
                         onClick={() => { 
-                          // 🚨 품목 클릭 시 단가 × 현재 설정된 수량으로 실시간 계산 연동
                           setGrantData({
                             ...grantData, 
                             product_id: p.id, 
@@ -642,7 +709,7 @@ export default function Customers() {
                           }); 
                           setProductSearch(p.name); 
                         }} 
-                        className="w-full flex justify-between p-4 hover:bg-blue-50 rounded-xl transition-all font-black"
+                        className="w-full flex justify-between p-4 hover:bg-blue-50 rounded-xl transition-all font-black text-sm"
                       >
                         <span>{p.name}</span><span className="text-blue-600">₩{p.price?.toLocaleString()}</span>
                       </button>
@@ -651,12 +718,11 @@ export default function Customers() {
                 )}
               </div>
 
-              {/* 물류 인프라 정보 배정 세션 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">배송 수단</label>
                   <select 
-                    className="w-full bg-gray-50 p-4 rounded-2xl outline-none border-none font-black text-gray-700" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none border-none font-black text-gray-700" 
                     value={grantData.carrier} 
                     onChange={e => setGrantData({...grantData, carrier: e.target.value})}
                   >
@@ -665,24 +731,23 @@ export default function Customers() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">송장번호/날짜</label>
                   <input 
-                    className="w-full bg-gray-50 p-4 rounded-2xl border-none outline-none font-black" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-black" 
                     value={grantData.tracking_no} 
                     onChange={(e) => setGrantData({...grantData, tracking_no: e.target.value})} 
                   />
                 </div>
               </div>
 
-              {/* 🚨 수량 조절 및 총 청구 금액 실시간 계산 연동 레이아웃 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">수량</label>
                   <input 
                     type="number"
                     min="1"
-                    className="w-full bg-gray-50 p-4 rounded-2xl border-none outline-none font-black" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-black" 
                     value={grantData.quantity} 
                     onChange={(e) => {
                       const qty = parseInt(e.target.value) || 1;
@@ -691,16 +756,16 @@ export default function Customers() {
                       setGrantData({
                         ...grantData,
                         quantity: qty,
-                        total_amount: unitPrice * qty // 수량 조절 시 총액 실시간 동적 갱신
+                        total_amount: unitPrice * qty
                       });
                     }} 
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">총 청구 금액</label>
                   <input 
                     type="number"
-                    className="w-full bg-blue-50/50 text-blue-600 p-4 rounded-2xl border-none outline-none font-black" 
+                    className="w-full bg-blue-50/50 text-blue-600 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-black" 
                     value={grantData.total_amount} 
                     onChange={(e) => setGrantData({...grantData, total_amount: parseInt(e.target.value) || 0})} 
                   />
@@ -709,9 +774,9 @@ export default function Customers() {
 
             </div>
             
-            <div className="p-8 bg-gray-50 flex gap-4">
-              <button onClick={() => setIsGrantModalOpen(false)} className="flex-1 py-4 bg-white border border-gray-200 text-gray-500 rounded-2xl hover:bg-gray-100 transition-colors">취소</button>
-              <button onClick={handleGrantComplete} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl shadow-xl font-black hover:bg-blue-700 transition-colors">
+            <div className="p-5 md:p-8 bg-gray-50 flex gap-3 md:gap-4 shrink-0 border-t border-gray-100">
+              <button onClick={() => setIsGrantModalOpen(false)} className="flex-1 py-3.5 md:py-4 bg-white border border-gray-200 text-gray-500 rounded-xl md:rounded-2xl hover:bg-gray-100 transition-colors">취소</button>
+              <button onClick={handleGrantComplete} className="flex-[2] py-3.5 md:py-4 bg-blue-600 text-white rounded-xl md:rounded-2xl shadow-xl font-black hover:bg-blue-700 transition-colors">
                 교부 완료 처리
               </button>
             </div>

@@ -682,6 +682,64 @@ export default function Claims() {
     );
   };
 
+  const renderActions = (claim, isProductMissing, s) => (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {!isProductMissing && s === '대기 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
+      
+      {s === '배송 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-amber-600 flex items-center gap-1.5"><Camera size={14}/> 사진 등록</button>}
+      
+      {s === '교부 완료' && (
+        <>
+          {(!claim.receipt_photos || claim.receipt_photos.length === 0) && (
+            <button 
+              onClick={() => openEditModal(claim)} 
+              className="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-black shadow-sm hover:bg-rose-100 flex items-center gap-1.5 animate-pulse"
+              title="수취 증빙 사진이 누락되었습니다."
+            >
+              <Camera size={14}/> 사진 보완
+            </button>
+          )}
+          <button onClick={() => openPrintModal(claim)} className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-50 flex items-center gap-1.5"><Printer size={14}/> 인쇄</button>
+          <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
+        </>
+      )}
+
+      {s === '청구 완료 (계산서 미발행)' && (
+        <button 
+          onClick={() => handleTaxInvoiceConfirm(claim.id)} 
+          className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"
+        >
+          <Send size={14}/> 세금계산서 발행 완료
+        </button>
+      )}
+
+      {s === '청구 완료 (계산서 발행)' && (
+        <button 
+          onClick={() => { 
+            setSelectedClaim(claim); 
+            setActiveModal('settlement'); 
+          }} 
+          className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"
+        >
+          <CheckCircle2 size={14}/> 정산 완료
+        </button>
+      )}
+      
+      {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
+
+      <div className="flex items-center gap-1 ml-1 md:opacity-0 group-hover:opacity-100 transition-opacity">
+        <button 
+          onClick={() => openProductAssignmentModal(claim)} 
+          className="p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-lg border border-indigo-100 transition-colors" 
+          title="동일 대상자 품목 추가 접수 (데이터 연동)"
+        >
+          <Plus size={14} strokeWidth={3} />
+        </button>
+        <button onClick={() => openEditModal(claim)} className="p-2 text-gray-400 hover:text-gray-800 bg-gray-50 rounded-lg border border-gray-200" title="내역 수정"><Edit3 size={14}/></button>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <style type="text/css">
@@ -749,33 +807,35 @@ export default function Claims() {
       </style>
 
       {/* --- 실제 화면 UI 영역 (인쇄 시 숨김 처리됨) --- */}
-      <div className="print-hide-ui p-8 space-y-6 animate-in fade-in duration-700 font-sans pb-24">
-        {/* 헤더 */}
-        <div className="flex justify-between items-end">
+      <div className="print-hide-ui space-y-6 animate-in fade-in duration-700 font-sans pb-24">
+        
+        {/* 모바일 반응형 헤더 */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">청구/교부 통합 리스트</h1>
             <p className="text-gray-500 mt-2 font-bold text-sm">업무 흐름 파이프라인 (고밀도 뷰)</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={resetFilters} className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-200"><RefreshCw size={14}/> 초기화</button>
-            <button onClick={() => setActiveModal('create')} className="flex items-center gap-2 px-5 py-2 bg-indigo-600 rounded-xl text-sm font-black text-white hover:bg-indigo-700 shadow-md"><Plus size={18}/> 신규 접수(상품 할당)</button>
+          <div className="flex gap-2 w-full md:w-auto">
+            <button onClick={resetFilters} className="flex-1 md:flex-none items-center justify-center gap-2 px-4 py-3 bg-gray-100 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-200 flex"><RefreshCw size={14}/> 초기화</button>
+            <button onClick={() => setActiveModal('create')} className="flex-[2] md:flex-none items-center justify-center gap-2 px-5 py-3 bg-indigo-600 rounded-xl text-sm font-black text-white hover:bg-indigo-700 shadow-md flex"><Plus size={18}/> 신규 접수(상품 할당)</button>
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-sm font-bold items-center">
-          <div className="col-span-3 relative group">
+        {/* 모바일 반응형 검색/필터 영역 */}
+        <div className="flex flex-col xl:grid xl:grid-cols-12 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm font-bold items-center">
+          <div className="w-full xl:col-span-3 relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input type="text" placeholder="대상자 검색..." className="w-full pl-10 pr-3 py-2.5 bg-gray-50 rounded-xl outline-none text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="대상자 검색..." className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
-          <div className="col-span-2 relative">
+          <div className="w-full xl:col-span-2 relative">
             <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <select className="w-full pl-10 pr-3 py-2.5 bg-gray-50 rounded-xl outline-none text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <select className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="전체">모든 진행 상태</option>
               {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           
-          <div className="col-span-7 flex justify-end items-center gap-2">
+          <div className="w-full xl:col-span-7 flex flex-wrap md:flex-nowrap justify-start xl:justify-end items-center gap-2">
             <button 
               onClick={() => setGroupByCustomer(!groupByCustomer)} 
               className={`px-3 py-2 text-xs font-bold border rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
@@ -785,25 +845,76 @@ export default function Claims() {
               }`}
             >
               {groupByCustomer ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />}
-              대상자별 묶기
+              대상자 묶기
             </button>
             
-            <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl">
+            <div className="flex flex-1 md:flex-none items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl">
               <Calendar className="text-gray-400" size={16} />
-              <input type="date" className="bg-transparent outline-none text-xs text-gray-700" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+              <input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
               <span className="text-gray-300">~</span>
-              <input type="date" className="bg-transparent outline-none text-xs text-gray-700" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+              <input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
             </div>
-            <div className="flex gap-1">
-              <button onClick={() => setQuickDate('today')} className="px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">오늘</button>
-              <button onClick={() => setQuickDate('week')} className="px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1주일</button>
-              <button onClick={() => setQuickDate('month')} className="px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1개월</button>
+            
+            <div className="flex gap-1 w-full md:w-auto">
+              <button onClick={() => setQuickDate('today')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">오늘</button>
+              <button onClick={() => setQuickDate('week')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1주일</button>
+              <button onClick={() => setQuickDate('month')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1개월</button>
             </div>
           </div>
         </div>
 
-        {/* 테이블 */}
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+        {/* 🚨 모바일 전용 UI: 카드형 뷰 (PC에서는 숨김) */}
+        <div className="block md:hidden space-y-4">
+          {currentItems.length > 0 ? currentItems.map((claim) => {
+            const s = claim.status;
+            const isProductMissing = !claim.product_id || claim.products?.name === '품목 미지정';
+
+            return (
+              <div key={claim.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="font-black text-lg text-gray-900 leading-tight">{claim.customers?.name}</div>
+                    <div className="text-xs text-gray-500 font-bold mt-0.5">{claim.customers?.local_governments?.name || '지자체 미정'}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500 font-mono">{formatShortDate(claim.claim_date)}</div>
+                    <div className="text-sm font-black text-indigo-600 font-mono mt-0.5">{claim.total_amount?.toLocaleString()}원</div>
+                  </div>
+                </div>
+
+                {claim.notes && (
+                  <div title={claim.notes} className="mb-3 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-2 py-1 rounded">
+                    <FileText size={10} /> 특이사항 있음 (수정 화면 확인)
+                  </div>
+                )}
+
+                <div className="bg-gray-50 rounded-xl p-3 mb-4 flex flex-col gap-3">
+                  <div className="font-black text-sm text-indigo-900 leading-snug break-keep flex items-center gap-1">
+                    <Package size={14} className="text-indigo-400" />
+                    {isProductMissing ? <span className="text-rose-500">상품 미할당</span> : claim.products?.name}
+                  </div>
+                  
+                  {isProductMissing ? (
+                    <button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse">
+                      <Plus size={12}/> 상품할당 바로가기
+                    </button>
+                  ) : (
+                    <div className="overflow-x-auto custom-scrollbar pb-1">
+                      {renderStatusPipeline(claim)}
+                    </div>
+                  )}
+                </div>
+
+                {renderActions(claim, isProductMissing, s)}
+              </div>
+            );
+          }) : (
+            <div className="p-10 text-center text-gray-400 font-bold bg-white rounded-2xl border border-gray-100">등록된 청구 내역이 없습니다.</div>
+          )}
+        </div>
+
+        {/* 🚨 PC 전용 UI: 테이블 뷰 (모바일에서는 숨김) */}
+        <div className="hidden md:flex bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex-col">
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
               <tr>
@@ -862,64 +973,8 @@ export default function Claims() {
                         renderStatusPipeline(claim)
                       )}
                     </td>
-
                     <td className="py-3 px-5 text-right align-middle">
-                      <div className="flex items-center justify-end gap-1.5">
-                        
-                        {!isProductMissing && s === '대기 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
-                        
-                        {s === '배송 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-amber-600 flex items-center gap-1.5"><Camera size={14}/> 사진 등록</button>}
-                        
-                        {s === '교부 완료' && (
-                          <>
-                            {(!claim.receipt_photos || claim.receipt_photos.length === 0) && (
-                              <button 
-                                onClick={() => openEditModal(claim)} 
-                                className="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-black shadow-sm hover:bg-rose-100 flex items-center gap-1.5 animate-pulse"
-                                title="수취 증빙 사진이 누락되었습니다."
-                              >
-                                <Camera size={14}/> 사진 보완
-                              </button>
-                            )}
-                            <button onClick={() => openPrintModal(claim)} className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-50 flex items-center gap-1.5"><Printer size={14}/> 인쇄</button>
-                            <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
-                          </>
-                        )}
-
-                        {s === '청구 완료 (계산서 미발행)' && (
-                          <button 
-                            onClick={() => handleTaxInvoiceConfirm(claim.id)} 
-                            className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"
-                          >
-                            <Send size={14}/> 세금계산서 발행 완료
-                          </button>
-                        )}
-
-                        {s === '청구 완료 (계산서 발행)' && (
-                          <button 
-                            onClick={() => { 
-                              setSelectedClaim(claim); 
-                              setActiveModal('settlement'); 
-                            }} 
-                            className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"
-                          >
-                            <CheckCircle2 size={14}/> 정산 완료
-                          </button>
-                        )}
-                        
-                        {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
-
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex items-center gap-1">
-                          <button 
-                            onClick={() => openProductAssignmentModal(claim)} 
-                            className="p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-lg border border-indigo-100 transition-colors" 
-                            title="동일 대상자 품목 추가 접수 (데이터 연동)"
-                          >
-                            <Plus size={14} strokeWidth={3} />
-                          </button>
-                          <button onClick={() => openEditModal(claim)} className="p-2 text-gray-400 hover:text-gray-800 bg-gray-50 rounded-lg border border-gray-200" title="내역 수정"><Edit3 size={14}/></button>
-                        </div>
-                      </div>
+                      {renderActions(claim, isProductMissing, s)}
                     </td>
                   </tr>
                 );
@@ -929,51 +984,52 @@ export default function Claims() {
               )}
             </tbody>
           </table>
-
-          {filteredClaims.length > 0 && (
-            <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-              <div className="text-xs font-bold text-gray-500">
-                총 <span className="text-indigo-600 font-black">{filteredClaims.length}</span> 건 조회됨
-              </div>
-              <div className="flex gap-1.5 items-center">
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
-                  disabled={currentPage === 1}
-                  className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"
-                >
-                  <ChevronLeft size={16} strokeWidth={2.5} />
-                </button>
-                
-                <div className="flex gap-1 px-2">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(num => (
-                    <button
-                      key={num}
-                      onClick={() => setCurrentPage(num)}
-                      className={`w-8 h-8 rounded-lg text-[13px] font-black flex items-center justify-center transition-colors shadow-sm
-                        ${currentPage === num ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
-                    >
-                      {num}
-                    </button>
-                  ))}
-                </div>
-
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
-                  disabled={currentPage === totalPages}
-                  className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"
-                >
-                  <ChevronRight size={16} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* 공통 페이지네이션 */}
+        {filteredClaims.length > 0 && (
+          <div className="flex justify-between items-center px-4 md:px-6 py-4 bg-transparent md:bg-gray-50/50 border-t-0 md:border-t border-gray-100">
+            <div className="hidden md:block text-xs font-bold text-gray-500">
+              총 <span className="text-indigo-600 font-black">{filteredClaims.length}</span> 건 조회됨
+            </div>
+            <div className="flex w-full md:w-auto justify-center md:justify-end gap-1.5 items-center">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"
+              >
+                <ChevronLeft size={16} strokeWidth={2.5} />
+              </button>
+              
+              <div className="flex gap-1 px-2">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(num => (
+                  <button
+                    key={num}
+                    onClick={() => setCurrentPage(num)}
+                    className={`w-8 h-8 rounded-lg text-[13px] font-black flex items-center justify-center transition-colors shadow-sm
+                      ${currentPage === num ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {num}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"
+              >
+                <ChevronRight size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 신규 접수 & 상품 할당 모달 */}
         {activeModal === 'create' && (
-          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in zoom-in-95 font-black">
-            <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-10 shadow-2xl">
-              <h4 className="text-2xl font-black mb-2">신규 대상자 상품 할당</h4>
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-lg rounded-3xl md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
+              <h4 className="text-xl md:text-2xl font-black mb-2">신규 대상자 상품 할당</h4>
               <div className="space-y-4 mb-8 mt-6">
                 <div>
                   <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">대상자 (수급자) 선택</label>
@@ -984,7 +1040,7 @@ export default function Claims() {
                     value={custSearchTerm}
                     onChange={e => setCustSearchTerm(e.target.value)}
                   />
-                  <select className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-gray-800 border border-gray-200" value={newData.customer_id} onChange={e => setNewData({...newData, customer_id: e.target.value})}>
+                  <select className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 border border-gray-200" value={newData.customer_id} onChange={e => setNewData({...newData, customer_id: e.target.value})}>
                     <option value="">대상자를 선택하세요 ({filteredCustomersForSelect.length}건 검색됨)</option>
                     {filteredCustomersForSelect.map(c => <option key={c.id} value={c.id}>{c.name} ({c.birth_date})</option>)}
                   </select>
@@ -999,7 +1055,7 @@ export default function Claims() {
                     onChange={e => setProdSearchTerm(e.target.value)}
                   />
                   <select 
-                    className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-indigo-700 border border-gray-200" 
+                    className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none font-bold text-indigo-700 border border-gray-200" 
                     value={newData.product_id} 
                     onChange={e => {
                       const selectedId = e.target.value;
@@ -1015,14 +1071,14 @@ export default function Claims() {
                     {filteredDevicesForSelect.map(d => <option key={d.id} value={d.id}>{d.category ? `[${d.category}]` : ''} {d.name}</option>)}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label>
-                    <input type="date" className="w-full bg-gray-50 p-4 rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} />
+                    <input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} />
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">청구 금액</label>
-                    <input type="number" className="w-full bg-gray-50 p-4 rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: parseInt(e.target.value) || 0})} />
+                    <input type="number" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: parseInt(e.target.value) || 0})} />
                   </div>
                 </div>
               </div>
@@ -1036,8 +1092,8 @@ export default function Claims() {
 
         {/* 입금일 등록 모달 */}
         {activeModal === 'settlement' && selectedClaim && (
-          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
-            <div className="bg-white w-full max-w-sm rounded-3xl p-8 shadow-2xl">
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6">
+            <div className="bg-white w-full max-w-sm rounded-3xl p-6 md:p-8 shadow-2xl">
               <h2 className="text-lg font-black mb-4">정산 입금일 등록</h2>
               <input type="date" className="w-full p-3 bg-gray-50 rounded-xl mb-6 font-bold" value={depositDate} onChange={e => setDepositDate(e.target.value)} />
               <div className="flex gap-2">
@@ -1051,13 +1107,13 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 종합 편집 모달 */}
+        {/* 종합 편집 모달 (모바일 최적화) */}
         {activeModal === 'edit' && selectedClaim && (
-          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in zoom-in-95 font-black">
-            <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-2xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <div>
-                  <h4 className="text-2xl font-black text-gray-900">내역 종합 편집</h4>
+                  <h4 className="text-xl md:text-2xl font-black text-gray-900">내역 종합 편집</h4>
                   <p className="text-xs text-gray-400 mt-1">{selectedClaim.customers?.name} 대상자의 교부 데이터를 수정합니다.</p>
                 </div>
                 <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
@@ -1065,13 +1121,13 @@ export default function Claims() {
 
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-4">
                 
-                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl mb-5 text-sm flex justify-between items-center shadow-sm">
+                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl md:rounded-2xl mb-5 text-sm flex justify-between items-center shadow-sm">
                   <span className="text-indigo-900 font-bold">현재 배정 품목</span>
                   <span className="text-indigo-600 font-black tracking-tight">{selectedClaim.products?.name || '품목 미지정'}</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                  <div className="space-y-4 md:space-y-5">
                     <div>
                       <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">기본 정보 & 상태</div>
                       <div className="space-y-3">
@@ -1081,7 +1137,7 @@ export default function Claims() {
                             {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col md:flex-row gap-2">
                           <div className="flex-1">
                             <label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label>
                             <input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} />
@@ -1096,8 +1152,8 @@ export default function Claims() {
 
                     <div>
                       <div className="text-xs text-amber-600 font-black border-b pb-2 mb-3 mt-2">물류 및 배송 정보</div>
-                      <div className="flex gap-2">
-                        <select className="w-1/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-700" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}>
+                      <div className="flex flex-col md:flex-row gap-2">
+                        <select className="w-full md:w-1/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-700" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}>
                           <option value="CJ대한통운">CJ대한통운</option>
                           <option value="우체국택배">우체국택배</option>
                           <option value="롯데택배">롯데택배</option>
@@ -1113,16 +1169,15 @@ export default function Claims() {
                           <option value="직접 배송/설치">직접 배송/설치</option>
                           <option value="기타">기타</option>
                         </select>
-                        <input className="w-2/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
+                        <input className="w-full md:w-2/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
                       </div>
                     </div>
 
-                    {/* ✅ 특이사항 및 지연 사유 추가 부분 */}
                     <div>
                       <div className="text-xs text-rose-600 font-black border-b pb-2 mb-3 mt-2 flex items-center gap-1.5"><FileText size={14}/> 특이사항 및 지연 사유</div>
                       <textarea 
                         className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-medium text-gray-800 resize-none h-24 focus:bg-white focus:border-rose-300 focus:ring-2 focus:ring-rose-100 transition-all placeholder:text-gray-400" 
-                        placeholder="정산 지연 사유, 고객/지자체 요청사항, 서류 반려 등 특이사항을 자유롭게 입력하세요."
+                        placeholder="정산 지연 사유, 고객/지자체 요청사항, 서류 반려 등 특이사항을 입력하세요."
                         value={editData.notes}
                         onChange={e => setEditData({...editData, notes: e.target.value})}
                       />
@@ -1135,7 +1190,7 @@ export default function Claims() {
                       <span className="text-gray-400 tracking-wider">{photoFiles.length}/3 장</span>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
                       {photoFiles.map((src, idx) => (
                         <div key={idx} className="relative group">
                           <img src={src} className="w-full h-28 object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
@@ -1162,13 +1217,13 @@ export default function Claims() {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-between border-t pt-5 mt-2 flex-shrink-0">
-                <button onClick={() => handleDelete(selectedClaim.id)} className="px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center gap-2 transition-colors border border-red-100 text-sm shadow-sm">
+              <div className="flex flex-col md:flex-row gap-3 justify-between border-t pt-4 mt-2 flex-shrink-0">
+                <button onClick={() => handleDelete(selectedClaim.id)} className="w-full md:w-auto px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center justify-center gap-2 transition-colors border border-red-100 text-sm shadow-sm order-last md:order-first">
                   <Trash2 size={16}/> 삭제하기
                 </button>
-                <div className="flex gap-2">
-                  <button onClick={() => setActiveModal(null)} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 text-sm shadow-sm">취소</button>
-                  <button onClick={handleEditSubmit} className="px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-colors text-sm">
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button onClick={() => setActiveModal(null)} className="flex-1 md:flex-none px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 text-sm shadow-sm">취소</button>
+                  <button onClick={handleEditSubmit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-colors text-sm">
                     첨부하기 (저장)
                   </button>
                 </div>
@@ -1177,39 +1232,35 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 이메일 발송 모달 */}
+        {/* 이메일 발송 모달 (모바일 최적화) */}
         {activeModal === 'email' && selectedClaim && (
-          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in zoom-in-95 font-black">
-            <div className="bg-white w-full max-w-5xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
+          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-5xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-5 md:p-6 bg-blue-600 text-white flex justify-between items-center shrink-0">
                 <h4 className="text-lg">{isDocPreview ? '첨부 서류 최종 검토' : '지자체 청구 서류 발송 (메일)'}</h4>
                 <button onClick={() => setActiveModal(null)}><X size={20}/></button>
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden flex flex-col">
                 {!isDocPreview ? (
-                  <div className="grid grid-cols-5 h-full min-h-[500px]">
-                    <div className="col-span-3 p-6 space-y-4 border-r overflow-y-auto custom-scrollbar">
-                      <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 space-y-1">
+                  <div className="flex flex-col md:grid md:grid-cols-5 h-full overflow-y-auto custom-scrollbar">
+                    <div className="md:col-span-3 p-5 md:p-6 space-y-4 md:border-r">
+                      <div className="bg-blue-50/50 p-4 rounded-xl md:rounded-2xl border border-blue-100 space-y-1">
                         <label className="text-[11px] text-blue-600 uppercase font-black block">서류 발행일 선택</label>
                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-1">* 청구서, 교부확인서(하단), 거래명세서에 일괄 반영됩니다.</p>
                         <input type="date" className="w-full bg-white p-2.5 rounded-xl outline-none text-sm font-bold border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                       </div>
                       <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-gray-200" value={emailData.recipient} onChange={e => setEmailData({...emailData, recipient: e.target.value})} placeholder="수신 이메일" />
-                      
-                      {/* 제목 입력란 (이미 수정 가능하도록 구현되어 있음) */}
                       <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm font-black text-gray-900 border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
-                      
-                      {/* 내용 입력란 (이미 수정 가능하도록 구현되어 있음) */}
-                      <textarea className="w-full h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
+                      <textarea className="w-full h-32 md:h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
                     </div>
-                    <div className="col-span-2 p-6 bg-gray-50 flex flex-col overflow-y-auto">
+                    <div className="md:col-span-2 p-5 md:p-6 bg-gray-50 flex flex-col border-t md:border-t-0">
                       <div className="mb-4 text-xs text-blue-600 uppercase font-black">첨부 서류 선택</div>
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                         {standardDocs.map(docName => {
                           const isChecked = emailData.files[docName];
                           return (
-                            <button key={docName} onClick={() => setEmailData({...emailData, files: {...emailData.files, [docName]: !isChecked}})} className={`w-full p-3 rounded-lg border flex justify-between text-xs transition-all ${isChecked ? 'bg-white border-blue-400 text-blue-700' : 'bg-transparent border-gray-200 text-gray-400'}`}>
-                              <span className="font-bold">{docName}</span>{isChecked ? <CheckSquare size={16}/> : <Square size={16}/>}
+                            <button key={docName} onClick={() => setEmailData({...emailData, files: {...emailData.files, [docName]: !isChecked}})} className={`w-full p-3 rounded-lg border flex justify-between items-center text-xs transition-all ${isChecked ? 'bg-white border-blue-400 text-blue-700 shadow-sm' : 'bg-transparent border-gray-200 text-gray-400'}`}>
+                              <span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}
                             </button>
                           );
                         })}
@@ -1217,10 +1268,10 @@ export default function Claims() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-6 bg-gray-300 h-[500px] overflow-y-auto custom-scrollbar">
-                    <div className="flex flex-col gap-10 max-w-4xl mx-auto items-center pb-20">
+                  <div className="p-4 md:p-6 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
+                    <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
                       {standardDocs.filter(docName => emailData.files[docName]).map((fileName, idx) => (
-                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box' }}>
+                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
                           {renderDocument(fileName, selectedClaim)}
                         </div>
                       ))}
@@ -1228,7 +1279,7 @@ export default function Claims() {
                   </div>
                 )}
               </div>
-              <div className="p-5 bg-white border-t flex gap-3">
+              <div className="p-4 md:p-5 bg-white border-t flex gap-2 md:gap-3 shrink-0">
                 {!isDocPreview ? (
                   <>
                     <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl">닫기</button>
@@ -1247,29 +1298,29 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 인쇄 선택 및 미리보기 모달 */}
+        {/* 인쇄 선택 및 미리보기 모달 (모바일 최적화) */}
         {activeModal === 'print' && selectedClaim && (
-          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in zoom-in-95 font-black">
-             <div className="bg-white w-full max-w-6xl rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
-              <div className="p-6 bg-gray-800 text-white flex justify-between items-center">
+          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+             <div className="bg-white w-full max-w-6xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
+              <div className="p-5 md:p-6 bg-gray-800 text-white flex justify-between items-center shrink-0">
                 <h4 className="text-lg">{isPrintDocPreview ? '선택한 서류 인쇄 미리보기' : '서류 인쇄 선택'}</h4>
                 <button onClick={() => setActiveModal(null)}><X size={20}/></button>
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden flex flex-col">
                 {!isPrintDocPreview ? (
-                  <div className="p-8 overflow-y-auto bg-gray-50 h-full flex items-center justify-center min-h-[400px]">
+                  <div className="p-5 md:p-8 overflow-y-auto bg-gray-50 flex-1 flex items-start md:items-center justify-center custom-scrollbar">
                     <div className="w-full max-w-2xl space-y-4">
-                       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-1">
+                       <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
                          <label className="text-[11px] text-gray-700 uppercase font-black block">서류 발행일 선택</label>
-                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-1">* 청구서, 교부확인서(하단), 거래명세서 인쇄에 일괄 반영됩니다.</p>
+                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-2">* 청구서, 교부확인서(하단), 거래명세서 인쇄에 일괄 반영됩니다.</p>
                          <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl outline-none text-sm font-bold border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                        </div>
-                       <div className="grid grid-cols-2 gap-3">
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                          {standardDocs.map((docName) => {
                            const isChecked = printFiles[docName];
                            return (
-                             <button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between text-sm ${isChecked ? 'border-gray-800 text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400'}`}>
-                               <span className="font-bold">{docName}</span>{isChecked ? <CheckSquare size={16}/> : <Square size={16}/>}
+                             <button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}>
+                               <span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}
                              </button>
                            );
                          })}
@@ -1277,10 +1328,10 @@ export default function Claims() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-8 bg-gray-300 h-[500px] overflow-y-auto custom-scrollbar">
-                    <div className="flex flex-col gap-10 max-w-4xl mx-auto items-center pb-20">
+                  <div className="p-4 md:p-8 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
+                    <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
                       {standardDocs.filter(docName => printFiles[docName]).map((fileName, idx) => (
-                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box' }}>
+                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
                           {renderDocument(fileName, selectedClaim)}
                         </div>
                       ))}
@@ -1288,7 +1339,7 @@ export default function Claims() {
                   </div>
                 )}
               </div>
-              <div className="p-5 border-t bg-white flex gap-3">
+              <div className="p-4 md:p-5 border-t bg-white flex gap-2 md:gap-3 shrink-0">
                 {!isPrintDocPreview ? (
                   <>
                     <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl">닫기</button>
