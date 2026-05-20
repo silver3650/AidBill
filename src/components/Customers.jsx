@@ -213,10 +213,24 @@ export default function Customers() {
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) processAiFile(file); };
 
-  async function handleSave() {
+async function handleSave() {
     if (!formData.name || !formData.local_gov_id) return alert('성함과 지자체는 필수입니다.');
+
+    // 💡 1. 현재 로그인한 사용자의 정보를 가져옵니다.
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+      return;
+    }
+
     const { local_governments, latestClaim, remainingDays, expireDate, ...pureData } = formData;
-    const payload = { ...pureData, local_gov_id: parseInt(formData.local_gov_id) };
+    
+    // 💡 2. payload에 company_id를 추가합니다.
+    const payload = { 
+      ...pureData, 
+      local_gov_id: parseInt(formData.local_gov_id),
+      company_id: user.id // 추가된 부분
+    };
     
     if (editingId) {
       const { error } = await supabase.from('customers').update(payload).eq('id', editingId);

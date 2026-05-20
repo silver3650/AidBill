@@ -267,18 +267,44 @@ export default function Claims() {
     }
   };
 
-  const handleCreateSubmit = async () => {
-    if (!newData.customer_id || !newData.product_id) { alert('대상자와 교부할 상품을 모두 선택해 주세요.'); return; }
+const handleCreateSubmit = async () => {
+    if (!newData.customer_id || !newData.product_id) { 
+      alert('대상자와 교부할 상품을 모두 선택해 주세요.'); 
+      return; 
+    }
+
+    // 💡 1. 현재 로그인한 사용자의 정보를 가져옵니다.
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+      return;
+    }
+
+    // 💡 2. 데이터 삽입 시 company_id를 함께 전달합니다.
     const { error } = await supabase.from('claims').insert([{
-      customer_id: newData.customer_id, product_id: newData.product_id,
-      claim_date: newData.claim_date, total_amount: newData.total_amount, status: '대기 중'
+      customer_id: newData.customer_id, 
+      product_id: newData.product_id,
+      claim_date: newData.claim_date, 
+      total_amount: newData.total_amount, 
+      status: '대기 중',
+      company_id: user.id // 💡 이 부분이 RLS 정책에 의해 필터링되는 핵심입니다.
     }]);
+
     if (!error) {
-      alert('접수 완료되었습니다.'); setActiveModal(null);
-      setNewData({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0 });
+      alert('접수 완료되었습니다.'); 
+      setActiveModal(null);
+      setNewData({ 
+        customer_id: '', 
+        product_id: '', 
+        claim_date: new Date().toISOString().split('T')[0], 
+        total_amount: 0 
+      });
       setCustSearchTerm('');
       setProdSearchTerm('');
       fetchData();
+    } else {
+      alert('접수 실패: ' + error.message);
     }
   };
 
