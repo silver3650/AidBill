@@ -20,18 +20,15 @@ export default function AuthPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 회원가입 로직
   const handleSignUp = async () => {
     const { companyName, bizRegNumber, ownerName, ownerBirthDate, email, password, bizLicense } = formData;
     if (!bizLicense) return alert('사업자등록증 파일을 반드시 첨부해 주세요.');
     
     setLoading(true);
     try {
-      // 1. Supabase Auth 계정 생성
       const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
 
-      // 2. 사업자등록증 Storage 업로드
       const fileExt = bizLicense.name.split('.').pop();
       const fileName = `${authData.user.id}/license.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -39,33 +36,32 @@ export default function AuthPage() {
         .upload(fileName, bizLicense);
       if (uploadError) throw uploadError;
 
-      // 3. 업체 상세 정보 DB 저장 (companies 테이블 - is_approved는 DB 기본값 false로 들어감)
-      const { error: dbError } = await supabase.from('companies').insert([{
-        id: authData.user.id,
+      // 💡 캡처화면의 실제 DB 컬럼명으로 완벽 매칭!
+      const { error: dbError } = await supabase.from('company_profile').insert([{
+        company_id: authData.user.id,
         company_name: companyName,
-        biz_reg_number: bizRegNumber,
-        owner_name: ownerName,
-        owner_birth_date: ownerBirthDate,
+        business_number: bizRegNumber,
+        representative_name: ownerName,
+        representative_birth: ownerBirthDate, // 수정됨
         email: email,
-        biz_license_url: fileName
-        // is_approved: false (DB에서 기본값으로 처리됨)
+        biz_reg_image: fileName, // 수정됨
+        is_approved: false
       }]);
+      
       if (dbError) throw dbError;
 
       alert('가입 신청이 완료되었습니다! 관리자 승인 후 이용 가능합니다.');
       setIsLogin(true);
     } catch (error) {
-      alert(error.message);
+      alert('회원가입 오류: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // 💡 수정된 로그인 로직
   const handleLogin = async () => {
     setLoading(true);
     try {
-      // 1. Supabase Auth 로그인 시도
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password
@@ -74,7 +70,6 @@ export default function AuthPage() {
 
       const userId = authData.user.id;
 
-      // 2. 로그인한 유저가 '최고 관리자'인지 확인 (관리자는 무조건 패스)
       const { data: adminData } = await supabase
         .from('admin_users')
         .select('id')
@@ -82,23 +77,19 @@ export default function AuthPage() {
         .maybeSingle();
 
       if (!adminData) {
-        // 3. 관리자가 아니라면 업체(companies)이므로 승인 상태(is_approved) 확인
         const { data: companyData, error: companyError } = await supabase
-          .from('companies')
+          .from('company_profile')
           .select('is_approved')
-          .eq('id', userId)
+          .eq('company_id', userId)
           .maybeSingle();
 
         if (companyError) throw companyError;
 
-        // 승인되지 않은 경우 (is_approved가 false이거나 null)
         if (companyData && companyData.is_approved === false) {
-          await supabase.auth.signOut(); // 💡 즉시 로그아웃 처리
+          await supabase.auth.signOut();
           throw new Error('가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.');
         }
       }
-      
-      // 승인된 업체이거나 관리자면 무사히 통과! (App.jsx가 알아서 화면 전환함)
     } catch (error) {
       alert(error.message);
     } finally {
@@ -108,10 +99,8 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-[100dvh] bg-[#F8FAFC] flex items-center justify-center p-4 md:p-6 font-sans overflow-hidden">
-      {/* 카드 래퍼 - 모바일에서는 화면을 거의 꽉 채우도록 여백과 둥근 모서리 최적화 */}
       <div className="w-full max-w-[1000px] bg-white rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 max-h-[95dvh] md:max-h-[90vh]">
         
-        {/* 왼쪽 섹션 (브랜드) - 모바일에서는 가로형 미니 헤더로 압축 */}
         <div className="w-full md:w-[40%] bg-blue-600 p-6 md:p-12 text-white flex flex-row md:flex-col justify-between items-center md:items-start shrink-0">
           <div className="flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-0 w-full">
             <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-xl md:rounded-2xl flex items-center justify-center md:mb-8 backdrop-blur-md shrink-0">
@@ -126,7 +115,6 @@ export default function AuthPage() {
               </p>
             </div>
           </div>
-          {/* PC에서만 하단 보안 뱃지 표시 */}
           <div className="hidden md:block space-y-3 w-full">
             <div className="flex items-center gap-3 text-[11px] font-black bg-white/10 p-4 rounded-2xl border border-white/5 uppercase tracking-widest w-fit">
               <CheckCircle2 size={16} className="text-blue-300" /> Secure Admin Access
@@ -134,9 +122,7 @@ export default function AuthPage() {
           </div>
         </div>
 
-        {/* 오른쪽 섹션 (폼) - 모바일 스크롤 가능하도록 설정 */}
         <div className="w-full md:w-[60%] p-6 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar flex-1">
-          {/* 탭 버튼 */}
           <div className="flex bg-gray-100 p-1 rounded-xl md:rounded-2xl mb-6 md:mb-10 shrink-0">
             <button 
               onClick={() => setIsLogin(true)} 

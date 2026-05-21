@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Building2, Receipt, Calendar, Search, 
   Download, Filter, ArrowUpRight, TrendingUp, AlertCircle, 
-  RefreshCw, Clock, CheckCircle, X, FileText // 💡 X, FileText 아이콘 추가
+  RefreshCw, Clock, CheckCircle, X, FileText
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
@@ -17,18 +17,15 @@ export default function AdminDashboard() {
   const [pendingCompanies, setPendingCompanies] = useState([]); 
   const [searchTerm, setSearchTerm] = useState('');
   
-  // 💡 업체 상세 정보 모달 상태
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // 조회 기간 상태 (기본값: 이번 달)
   const today = new Date();
   const [dateRange, setDateRange] = useState({
     start: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0],
     end: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0]
   });
 
-  // 과금 정책
   const PRICING = {
     BASE_FEE: 30000,
     FREE_CLAIMS: 10,
@@ -41,7 +38,7 @@ export default function AdminDashboard() {
 
   const fetchPendingCompanies = async () => {
     const { data, error } = await supabase
-      .from('companies') 
+      .from('company_profile') 
       .select('*')
       .eq('is_approved', false)
       .order('created_at', { ascending: false });
@@ -110,14 +107,15 @@ export default function AdminDashboard() {
 
     try {
       const { error } = await supabase
-        .from('companies')
+        .from('company_profile') 
         .update({ is_approved: true })
-        .eq('id', companyId);
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
       alert(`${companyName} 업체가 성공적으로 승인되었습니다!`);
       await fetchPendingCompanies(); 
+      await checkAdminAndFetchData();
     } catch (error) {
       alert('승인 처리 중 오류가 발생했습니다: ' + error.message);
     }
@@ -169,7 +167,6 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  // 💡 업체 상세 정보 모달 열기/닫기 함수
   const openCompanyDetails = (company) => {
     setSelectedCompany(company);
     setIsModalOpen(true);
@@ -189,11 +186,10 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans relative">
       
-      {/* 💡 업체 상세 정보 모달 (isModalOpen이 true일 때만 표시) */}
+      {/* 💡 업체 상세 정보 모달 */}
       {isModalOpen && selectedCompany && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* 모달 헤더 */}
             <div className="bg-gray-50 border-b border-gray-100 p-6 flex items-center justify-between">
               <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
                 <Building2 className="text-indigo-600" /> 업체 상세 정보
@@ -203,7 +199,6 @@ export default function AdminDashboard() {
               </button>
             </div>
             
-            {/* 모달 내용 */}
             <div className="p-6 md:p-8 space-y-6">
               <div className="grid grid-cols-2 gap-y-6 gap-x-4">
                 <div className="col-span-2">
@@ -212,11 +207,11 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-gray-400 mb-1">대표자명</p>
-                  <p className="text-sm font-bold text-gray-700">{selectedCompany.owner_name || selectedCompany.representative_name || '미등록'}</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.representative_name || '미등록'}</p>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-gray-400 mb-1">사업자등록번호</p>
-                  <p className="text-sm font-bold text-gray-700">{selectedCompany.biz_reg_number || selectedCompany.business_number || '미등록'}</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.business_number || '미등록'}</p>
                 </div>
                 <div className="col-span-2">
                   <p className="text-xs font-bold text-gray-400 mb-1">이메일 (아이디)</p>
@@ -234,17 +229,27 @@ export default function AdminDashboard() {
                 </div>
               </div>
               
-              {/* 사업자등록증 URL이 있는 경우만 버튼 표시 (가입 대기 목록용) */}
-              {selectedCompany.biz_license_url && (
+              {/* 💡 기존 Base64 이미지와 신규 스토리지 URL 모두 지원하도록 수정 */}
+              {selectedCompany.biz_reg_image && (
                 <div className="pt-6 border-t border-gray-100">
-                  <a 
-                    href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/biz-licenses/${selectedCompany.biz_license_url}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl font-bold text-sm transition-colors"
-                  >
-                    <FileText size={18} /> 첨부된 사업자등록증 보기
-                  </a>
+                  {selectedCompany.biz_reg_image.startsWith('data:') ? (
+                    <a 
+                      href={selectedCompany.biz_reg_image} 
+                      download={`${selectedCompany.company_name}_사업자등록증.jpg`}
+                      className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl font-bold text-sm transition-colors"
+                    >
+                      <FileText size={18} /> 기존 첨부된 사업자등록증 다운로드
+                    </a>
+                  ) : (
+                    <a 
+                      href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/biz-licenses/${selectedCompany.biz_reg_image}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl font-bold text-sm transition-colors"
+                    >
+                      <FileText size={18} /> 첨부된 사업자등록증 보기
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -252,7 +257,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* 관리자 헤더 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 bg-gray-900 p-6 md:p-8 rounded-[2rem] text-white shadow-xl">
         <div>
           <div className="flex items-center gap-2 text-indigo-400 font-bold mb-2">
@@ -268,7 +272,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 신규 가입 대기 목록 섹션 */}
       <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-100 shadow-sm">
         <h3 className="text-xl font-black text-gray-900 mb-6 flex items-center gap-2">
           <Clock className="text-amber-500" /> 신규 가입 승인 대기
@@ -297,19 +300,19 @@ export default function AdminDashboard() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {pendingCompanies.map(company => (
-                  <tr key={company.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={company.company_id} className="hover:bg-gray-50/50 transition-colors">
                     <td 
                       className="px-6 py-4 font-black text-indigo-600 cursor-pointer hover:underline underline-offset-4"
-                      onClick={() => openCompanyDetails(company)} // 💡 모달 오픈 이벤트 추가
+                      onClick={() => openCompanyDetails(company)}
                     >
                       {company.company_name}
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-600">{company.owner_name}</td>
-                    <td className="px-6 py-4 font-bold text-gray-600">{company.biz_reg_number}</td>
+                    <td className="px-6 py-4 font-bold text-gray-600">{company.representative_name}</td>
+                    <td className="px-6 py-4 font-bold text-gray-600">{company.business_number}</td>
                     <td className="px-6 py-4 font-bold text-gray-400">{company.email}</td>
                     <td className="px-6 py-4 text-right">
                       <button
-                        onClick={() => handleApprove(company.id, company.company_name)}
+                        onClick={() => handleApprove(company.company_id, company.company_name)}
                         className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5 ml-auto transition-all shadow-md shadow-emerald-200 hover:scale-[1.02] active:scale-[0.98]"
                       >
                         <CheckCircle size={16} /> 가입 승인
@@ -323,7 +326,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* 요약 통계 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex items-center gap-5">
           <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
@@ -354,7 +356,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 필터 영역 */}
       <div className="bg-white p-4 md:p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
         <div className="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto">
           <div className="flex items-center gap-2 bg-gray-50 px-4 py-3 rounded-xl border border-gray-100 w-full md:w-auto">
@@ -377,7 +378,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 업체별 과금 리스트 테이블 */}
       <div className="bg-white border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden">
         <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
           <h3 className="font-black text-gray-900 flex items-center gap-2">
@@ -405,7 +405,7 @@ export default function AdminDashboard() {
                   <td className="px-6 py-5">
                     <div 
                       className="font-black text-indigo-600 text-sm cursor-pointer hover:underline underline-offset-4 w-fit"
-                      onClick={() => openCompanyDetails(comp)} // 💡 모달 오픈 이벤트 추가
+                      onClick={() => openCompanyDetails(comp)}
                     >
                       {comp.company_name || '미설정 업체'}
                     </div>
