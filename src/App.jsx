@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
-  LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck 
+  LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2 
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -17,8 +17,8 @@ import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
 
-// 💡 1. 원래 있던 내부 레이아웃 컴포넌트 (UI와 모든 기능 100% 그대로 유지)
-function MainLayout({ isAdmin }) {
+// 💡 1. 내부 레이아웃 컴포넌트 (UI 100% 유지 + companyName 프롭스 복구)
+function MainLayout({ isAdmin, companyName }) {
   const location = useLocation();
   const currentPath = location.pathname;
   
@@ -34,7 +34,7 @@ function MainLayout({ isAdmin }) {
     { id: 'company', path: '/company', text: '업체 정보', icon: <Building size={22} /> },
   ];
 
-  // 최고 관리자 메뉴 추가 (아이디 'admin'으로 매칭 버그 수정)
+  // 최고 관리자 메뉴 추가
   if (isAdmin) {
     menuItems.push({ 
       id: 'admin', 
@@ -125,7 +125,10 @@ function MainLayout({ isAdmin }) {
           </div>
           <div className="flex items-center gap-4">
             {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest mr-2 shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
-            {!isAdmin && <span className="hidden md:inline-block bg-blue-50 text-blue-600 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest mr-2">Company Mode</span>}
+            {/* 💡 헤더에 업체명(케어플러스 등)이 정상적으로 뜨도록 복구 */}
+            <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border">
+              <Building2 size={14} className="mr-2" /> {companyName}
+            </span>
           </div>
         </header>
 
@@ -148,35 +151,48 @@ function MainLayout({ isAdmin }) {
   );
 }
 
-// 💡 2. 최상위 App 컴포넌트 (안전 장치가 추가된 최신 로직)
+// 💡 2. 최상위 App 컴포넌트
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [companyName, setCompanyName] = useState(''); // 💡 유실되었던 상태 복구
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
 
-  // 관리자 체크 기능 (대소문자 .maybeSingle 로 수정완료)
-  const checkAdminStatus = async (user) => {
-    if (!user) return false;
+  // 💡 관리자 체크 및 업체 정보(케어플러스) 동시 조회 기능
+  const loadUserData = async (user) => {
+    if (!user) {
+      setIsAdmin(false);
+      setCompanyName('');
+      return;
+    }
+    
     try {
-      const { data, error } = await supabase
+      const { data: adminCheck } = await supabase
         .from('admin_users')
         .select('id')
         .eq('id', user.id)
-        .maybeSingle(); 
+        .maybeSingle();
 
-      if (error) {
-        console.error("Admin DB 조회 실패:", error.message);
-        return false;
+      setIsAdmin(!!adminCheck);
+
+      const { data: companyData } = await supabase
+        .from('company_profile')
+        .select('company_name')
+        .eq('company_id', user.id)
+        .maybeSingle();
+
+      if (companyData && companyData.company_name) {
+        setCompanyName(companyData.company_name);
+      } else {
+        setCompanyName(adminCheck ? '최고 관리자' : '미설정 업체');
       }
-      return !!data;
     } catch (err) {
-      console.error("Admin 체크 예외 발생:", err);
-      return false;
+      console.error("데이터 바인딩 실패:", err);
     }
   };
 
   useEffect(() => {
-    // 💡 안전 장치: Supabase 응답이 지연되어 하얗게 멈추는 현상을 방지하는 2.5초 타임아웃
+    // 안전 장치: 통신이 끊겨도 무한 로딩 방지 (5초 타임아웃)
     const safetyTimeout = setTimeout(() => {
       console.warn("인증 체크 시간이 초과되어 강제로 로딩을 해제합니다.");
       setIsCheckingAdmin(false);
@@ -186,32 +202,38 @@ export default function App() {
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         if (error) throw error;
-
-        setSession(initialSession);
         
-        if (initialSession?.user) {
-          const adminActive = await checkAdminStatus(initialSession.user);
-          setIsAdmin(adminActive);
+        if (initialSession) {
+          setSession(initialSession);
+          await loadUserData(initialSession.user);
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
         clearTimeout(safetyTimeout);
-        setIsCheckingAdmin(false); // 💡 어떤 에러가 나도 로딩 상태를 무조건 종료시킴
+        setIsCheckingAdmin(false); 
       }
     };
 
     initializeAuth();
 
-    // 실시간 세션 변경 감지
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      setSession(currentSession);
-      if (currentSession?.user) {
-        const adminActive = await checkAdminStatus(currentSession.user);
-        setIsAdmin(adminActive);
-      } else {
+    // 💡 핵심: 세션 만료 방지 및 자동 갱신(Auto-Refresh) 감지기 적용
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      
+      // 토큰 갱신(TOKEN_REFRESHED) 또는 로그인(SIGNED_IN) 시 세션 유지
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setSession(currentSession);
+        if (currentSession?.user) {
+          await loadUserData(currentSession.user);
+        }
+      } 
+      // 강제 로그아웃 또는 유저 삭제 시 정보 완전 초기화
+      else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        setSession(null);
         setIsAdmin(false);
+        setCompanyName('');
       }
+      
       setIsCheckingAdmin(false);
     });
 
@@ -221,7 +243,7 @@ export default function App() {
     };
   }, []);
 
-  // 로딩 스피너 화면 (하얀 화면 방지)
+  // 로딩 스피너 화면
   if (isCheckingAdmin) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FAFC]">
@@ -236,7 +258,7 @@ export default function App() {
       {!session ? (
         <AuthPage />
       ) : (
-        <MainLayout isAdmin={isAdmin} />
+        <MainLayout isAdmin={isAdmin} companyName={companyName} />
       )}
     </BrowserRouter>
   );
