@@ -1,18 +1,29 @@
 import { useState, useRef } from 'react';
 import { 
   Building2, User, Calendar, Lock, Mail, 
-  Upload, ArrowRight, CheckCircle2, Loader2 
+  Upload, ArrowRight, CheckCircle2, Loader2, Award, X 
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+
+// 💡 확정된 구독 플랜 데이터 (4단계)
+const SUBSCRIPTION_PLANS = [
+  { id: 'free', name: '프리', price: '0원', desc: '월 3건 이하 무료 지원. 시스템 도입 전 테스트용으로 적합한 스타터 플랜입니다.' },
+  { id: 'basic', name: '베이직', price: '49,000원', desc: '월 10건 기본 제공 (초과 시 건당 3,000원 과금). 일반적인 중소규모 업체에 적합한 표준 플랜입니다.' },
+  { id: 'pro', name: '프로', price: '99,000원', desc: '월 30건 기본 제공 (초과 시 건당 1,500원 과금). 매월 청구 건수가 많은 활발한 업체에 권장합니다.' },
+  { id: 'enterprise', name: '엔터프라이즈', price: '별도 협의', desc: '무제한 청구 및 맞춤형 커스텀 기능 제공. 보조기기 제조사 및 전국 단위 대형 업체에 적합합니다.' }
+];
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
 
+  const [selectedPlanInfo, setSelectedPlanInfo] = useState(null);
+
   const [formData, setFormData] = useState({
     companyName: '', bizRegNumber: '', ownerName: '',
-    ownerBirthDate: '', email: '', password: '', bizLicense: null
+    ownerBirthDate: '', email: '', password: '', bizLicense: null,
+    subscriptionPlan: 'free' // 💡 기본 선택값을 '프리'로 설정
   });
 
   const handleInputChange = (e) => {
@@ -20,8 +31,13 @@ export default function AuthPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handlePlanClick = (plan) => {
+    setFormData({ ...formData, subscriptionPlan: plan.id });
+    setSelectedPlanInfo(plan); // 모달 띄우기
+  };
+
   const handleSignUp = async () => {
-    const { companyName, bizRegNumber, ownerName, ownerBirthDate, email, password, bizLicense } = formData;
+    const { companyName, bizRegNumber, ownerName, ownerBirthDate, email, password, bizLicense, subscriptionPlan } = formData;
     if (!bizLicense) return alert('사업자등록증 파일을 반드시 첨부해 주세요.');
     
     setLoading(true);
@@ -36,15 +52,16 @@ export default function AuthPage() {
         .upload(fileName, bizLicense);
       if (uploadError) throw uploadError;
 
-      // 💡 캡처화면의 실제 DB 컬럼명으로 완벽 매칭!
+      // 💡 DB에 subscription_plan 저장
       const { error: dbError } = await supabase.from('company_profile').insert([{
         company_id: authData.user.id,
         company_name: companyName,
         business_number: bizRegNumber,
         representative_name: ownerName,
-        representative_birth: ownerBirthDate, // 수정됨
+        representative_birth: ownerBirthDate,
         email: email,
-        biz_reg_image: fileName, // 수정됨
+        biz_reg_image: fileName,
+        subscription_plan: subscriptionPlan, 
         is_approved: false
       }]);
       
@@ -98,9 +115,37 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#F8FAFC] flex items-center justify-center p-4 md:p-6 font-sans overflow-hidden">
+    <div className="min-h-[100dvh] bg-[#F8FAFC] flex items-center justify-center p-4 md:p-6 font-sans overflow-hidden relative">
+      
+      {/* 💡 요금제 상세 설명 팝업 모달 */}
+      {selectedPlanInfo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-blue-50 border-b border-blue-100 p-5 flex items-center justify-between">
+              <h3 className="text-lg font-black text-blue-700 flex items-center gap-2">
+                <Award size={18} /> {selectedPlanInfo.name} 플랜 안내
+              </h3>
+              <button onClick={() => setSelectedPlanInfo(null)} className="text-blue-400 hover:text-blue-700 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-end gap-1 mb-2">
+                <span className="text-2xl font-black text-gray-900">{selectedPlanInfo.price}</span>
+                {selectedPlanInfo.id !== 'enterprise' && <span className="text-xs font-bold text-gray-400 mb-1">/ 월 기본</span>}
+              </div>
+              <p className="text-sm font-bold text-gray-600 leading-relaxed break-keep">
+                {selectedPlanInfo.desc}
+              </p>
+              <button onClick={() => setSelectedPlanInfo(null)} className="w-full py-3 mt-4 bg-blue-600 text-white rounded-xl font-black shadow-md hover:bg-blue-700 transition-colors">
+                확인 및 선택 완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-[1000px] bg-white rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row animate-in fade-in zoom-in-95 duration-500 max-h-[95dvh] md:max-h-[90vh]">
-        
         <div className="w-full md:w-[40%] bg-blue-600 p-6 md:p-12 text-white flex flex-row md:flex-col justify-between items-center md:items-start shrink-0">
           <div className="flex flex-row md:flex-col items-center md:items-start gap-4 md:gap-0 w-full">
             <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-xl md:rounded-2xl flex items-center justify-center md:mb-8 backdrop-blur-md shrink-0">
@@ -124,18 +169,8 @@ export default function AuthPage() {
 
         <div className="w-full md:w-[60%] p-6 md:p-12 lg:p-16 overflow-y-auto custom-scrollbar flex-1">
           <div className="flex bg-gray-100 p-1 rounded-xl md:rounded-2xl mb-6 md:mb-10 shrink-0">
-            <button 
-              onClick={() => setIsLogin(true)} 
-              className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl text-sm font-black transition-all ${isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              로그인
-            </button>
-            <button 
-              onClick={() => setIsLogin(false)} 
-              className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl text-sm font-black transition-all ${!isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              회원가입
-            </button>
+            <button type="button" onClick={() => setIsLogin(true)} className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl text-sm font-black transition-all ${isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>로그인</button>
+            <button type="button" onClick={() => setIsLogin(false)} className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl text-sm font-black transition-all ${!isLogin ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>회원가입</button>
           </div>
 
           {isLogin ? (
@@ -145,21 +180,10 @@ export default function AuthPage() {
                 <p className="text-xs md:text-sm text-gray-400 font-bold">등록된 계정으로 로그인하세요.</p>
               </div>
               <div className="space-y-3 pt-2 md:pt-4">
-                <input 
-                  name="email" type="email" placeholder="이메일 주소" 
-                  className="w-full bg-gray-50 p-4 md:p-5 rounded-xl md:rounded-2xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm md:text-base transition-all" 
-                  onChange={handleInputChange}
-                />
-                <input 
-                  name="password" type="password" placeholder="비밀번호" 
-                  className="w-full bg-gray-50 p-4 md:p-5 rounded-xl md:rounded-2xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm md:text-base transition-all" 
-                  onChange={handleInputChange}
-                />
+                <input name="email" type="email" placeholder="이메일 주소" className="w-full bg-gray-50 p-4 md:p-5 rounded-xl md:rounded-2xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm md:text-base transition-all" onChange={handleInputChange} />
+                <input name="password" type="password" placeholder="비밀번호" className="w-full bg-gray-50 p-4 md:p-5 rounded-xl md:rounded-2xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm md:text-base transition-all" onChange={handleInputChange} />
               </div>
-              <button 
-                onClick={handleLogin} disabled={loading} 
-                className="w-full py-4 md:py-5 mt-2 bg-blue-600 text-white rounded-xl md:rounded-2xl font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70"
-              >
+              <button onClick={handleLogin} disabled={loading} className="w-full py-4 md:py-5 mt-2 bg-blue-600 text-white rounded-xl md:rounded-2xl font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70">
                 {loading ? <Loader2 className="animate-spin" /> : <>서비스 시작하기 <ArrowRight size={18} className="md:w-5 md:h-5"/></>}
               </button>
             </div>
@@ -170,59 +194,53 @@ export default function AuthPage() {
                 <p className="text-xs md:text-sm text-gray-400 font-bold">정확한 업체 정보를 입력해 주세요.</p>
               </div>
               <div className="grid grid-cols-1 gap-2.5 md:gap-3 pt-2">
-                <input 
-                  name="companyName" placeholder="업체명" 
-                  className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                  onChange={handleInputChange}
-                />
+                <input name="companyName" placeholder="업체명" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-3">
-                  <input 
-                    name="bizRegNumber" placeholder="사업자등록번호" 
-                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                    onChange={handleInputChange}
-                  />
-                  <input 
-                    name="ownerName" placeholder="대표자 성함" 
-                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                    onChange={handleInputChange}
-                  />
+                  <input name="bizRegNumber" placeholder="사업자등록번호" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
+                  <input name="ownerName" placeholder="대표자 성함" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 </div>
                 
                 <div className="w-full space-y-1.5">
                   <div className="text-[11px] md:text-xs font-bold text-gray-400 pl-1">대표자 생년월일</div>
-                  <input 
-                    name="ownerBirthDate" type="date" 
-                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                    onChange={handleInputChange}
-                  />
+                  <input name="ownerBirthDate" type="date" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 </div>
                 
-                <input 
-                  name="email" type="email" placeholder="아이디(이메일)" 
-                  className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                  onChange={handleInputChange}
-                />
-                <input 
-                  name="password" type="password" placeholder="비밀번호 설정" 
-                  className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" 
-                  onChange={handleInputChange}
-                />
+                <input name="email" type="email" placeholder="아이디(이메일)" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
+                <input name="password" type="password" placeholder="비밀번호 설정" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 
+                {/* 💡 요금제 선택 영역 (복구 완료) */}
+                <div className="w-full space-y-2 mt-2">
+                  <div className="text-[11px] md:text-xs font-bold text-gray-400 pl-1 flex items-center gap-1">
+                    <Award size={14} className="text-blue-500" /> 구독 플랜 선택 <span className="font-normal">(클릭하여 상세 확인)</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {SUBSCRIPTION_PLANS.map((plan) => (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        onClick={() => handlePlanClick(plan)} 
+                        className={`p-3 border-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
+                          formData.subscriptionPlan === plan.id 
+                            ? 'border-blue-600 bg-blue-50/50 text-blue-600 shadow-sm scale-[1.02]' 
+                            : 'border-gray-100 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:border-gray-200'
+                        }`}
+                      >
+                        <span className="text-xs font-black">{plan.name}</span>
+                        <span className="text-[10px] font-bold opacity-80">{plan.price}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="mt-1 md:mt-2">
                   <input type="file" className="hidden" ref={fileInputRef} onChange={(e) => setFormData({...formData, bizLicense: e.target.files[0]})} />
-                  <button 
-                    onClick={() => fileInputRef.current.click()} 
-                    className={`w-full p-4 md:p-6 border-2 border-dashed rounded-xl md:rounded-2xl flex flex-col items-center gap-1.5 md:gap-2 transition-all ${formData.bizLicense ? 'bg-blue-50 border-blue-200 text-blue-600 shadow-sm' : 'bg-gray-50 border-gray-100 text-gray-400 hover:bg-gray-100'}`}
-                  >
+                  <button type="button" onClick={() => fileInputRef.current.click()} className={`w-full p-4 md:p-6 border-2 border-dashed rounded-xl md:rounded-2xl flex flex-col items-center gap-1.5 md:gap-2 transition-all ${formData.bizLicense ? 'bg-blue-50 border-blue-200 text-blue-600 shadow-sm' : 'bg-gray-50 border-gray-100 text-gray-400 hover:bg-gray-100'}`}>
                     <Upload size={18} className="md:w-5 md:h-5" />
                     <span className="text-[11px] md:text-xs font-black">{formData.bizLicense ? formData.bizLicense.name : '사업자등록증 첨부 (필수)'}</span>
                   </button>
                 </div>
               </div>
-              <button 
-                onClick={handleSignUp} disabled={loading} 
-                className="w-full py-4 md:py-5 mt-2 bg-gray-900 text-white rounded-xl md:rounded-2xl font-black shadow-xl hover:bg-black hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70"
-              >
+              <button onClick={handleSignUp} disabled={loading} className="w-full py-4 md:py-5 mt-2 bg-gray-900 text-white rounded-xl md:rounded-2xl font-black shadow-xl hover:bg-black hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70">
                 {loading ? <Loader2 className="animate-spin mx-auto" /> : '회원가입 신청하기'}
               </button>
             </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, FileText, Banknote, Clock, 
   TrendingUp, PieChart, Activity,
-  ChevronRight, Package, ArrowLeftRight
+  ChevronRight, Package
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
@@ -30,29 +30,38 @@ export default function Dashboard() {
   const [monthToggle, setMonthToggle] = useState('this'); 
 
   useEffect(() => {
-    async function initialize() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) {
-        navigate('/login');
-        return;
+    async function load() {
+      setLoading(true);
+      try {
+        // 💡 통신 지연을 막기 위해 무거운 getUser 대신 로컬 세션을 빠르게 확인
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await fetchDashboardData(session.user.id);
+        } else {
+          setLoading(false);
+        }
+      } catch(e) {
+        console.error("세션 확인 에러:", e);
+        setLoading(false); // 에러가 나도 무조건 로딩은 끔!
       }
-      fetchDashboardData(user.id);
     }
-    initialize();
-  }, [chartFilter, navigate]);
+    load();
+  }, [chartFilter]);
 
   async function fetchDashboardData(userId) {
     try {
-      setLoading(true);
-      
-      // 💡 1. 내 업체 데이터만 가져오도록 필터링
+      // 💡 claims 테이블이 없을 경우를 대비한 1차 방어막
       const { data: claims, error } = await supabase
         .from('claims')
-        .select('*, customers(name)')
+        .select('*') 
         .eq('company_id', userId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.warn("데이터베이스 접근 오류 (claims 테이블이 없거나 권한이 없을 수 있습니다):", error.message);
+        throw error; // 아래 catch문으로 보냄
+      }
+      
       const safeClaims = claims || [];
 
       const today = new Date();
@@ -141,8 +150,10 @@ export default function Dashboard() {
       
     } catch (error) {
       console.error('대시보드 에러:', error);
-      alert('데이터를 불러오는 중 오류가 발생했습니다.');
+      // 에러가 나도 화면을 하얗게 두지 않고 경고창만 띄움
+      // alert('대시보드 데이터 연동이 필요합니다.'); // 필요시 주석 해제
     } finally {
+      // 💡 여기가 핵심! 성공하든 실패하든 무조건 로딩 바를 꺼버립니다.
       setLoading(false);
     }
   }
@@ -238,14 +249,14 @@ export default function Dashboard() {
                 const isClaimed = claim.status?.includes('청구 완료');
                 const displayStatus = isClaimed ? '청구 완료' : claim.status || '대기 중';
                 return (
-                  <div key={claim.id} onClick={() => navigate('/claims', { state: { searchTerm: claim.customers?.name } })} className="p-4 md:p-6 flex items-center justify-between hover:bg-indigo-50/50 cursor-pointer transition-all group">
+                  <div key={claim.id} onClick={() => navigate('/claims')} className="p-4 md:p-6 flex items-center justify-between hover:bg-indigo-50/50 cursor-pointer transition-all group">
                     <div className="flex items-center gap-3 md:gap-4">
                       <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-100 group-hover:bg-white rounded-xl md:rounded-2xl flex items-center justify-center text-gray-400 shrink-0 transition-colors">
                         <Package size={18} className="md:w-5 md:h-5 group-hover:text-indigo-600 transition-colors" />
                       </div>
                       <div>
-                        <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px] group-hover:text-indigo-700 transition-colors">{claim.customers?.name || '이름 없음'}</p>
-                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-0.5">{claim.claim_date || claim.created_at.split('T')[0]}</p>
+                        <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px] group-hover:text-indigo-700 transition-colors">청구 ID: {claim.id ? String(claim.id).substring(0, 8) : '정보 없음'}</p>
+                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-0.5">{claim.claim_date || (claim.created_at ? claim.created_at.split('T')[0] : '날짜 없음')}</p>
                       </div>
                     </div>
                     <div className="text-right flex flex-col items-end shrink-0">
@@ -255,7 +266,7 @@ export default function Dashboard() {
                   </div>
                 );
               }) : (
-                <div className="p-8 text-center text-xs md:text-sm text-gray-400 font-bold">최근 청구 내역이 없습니다.</div>
+                <div className="p-8 text-center text-xs md:text-sm text-gray-400 font-bold">최근 청구 내역이 없습니다. (청구 관리를 시작해 보세요!)</div>
               )}
             </div>
           </div>
@@ -283,7 +294,7 @@ export default function Dashboard() {
               교부가 완료되었으나 아직 청구 메일이 발송되지 않은 건이 <strong>{stats.statusCounts['교부 완료']}건</strong> 있습니다. 누락되지 않도록 서류를 확인하세요.
             </p>
             <button 
-              onClick={() => navigate('/claims', { state: { statusFilter: '교부 완료' } })}
+              onClick={() => navigate('/claims')}
               className="mt-5 md:mt-6 w-full py-3.5 md:py-4 bg-white text-indigo-600 rounded-xl md:rounded-2xl font-black text-xs md:text-sm hover:bg-indigo-50 transition-all shadow-lg"
             >
               교부 완료건 (청구 대기) 확인
