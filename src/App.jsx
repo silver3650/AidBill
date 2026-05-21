@@ -180,7 +180,7 @@ export default function App() {
     const safetyTimeout = setTimeout(() => {
       console.warn("인증 체크 시간이 초과되어 강제로 로딩을 해제합니다.");
       setIsCheckingAdmin(false);
-    }, 2500);
+    }, 5000);
 
     const initializeAuth = async () => {
       try {
