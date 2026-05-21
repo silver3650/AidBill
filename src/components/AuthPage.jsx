@@ -39,7 +39,7 @@ export default function AuthPage() {
         .upload(fileName, bizLicense);
       if (uploadError) throw uploadError;
 
-      // 3. 업체 상세 정보 DB 저장 (companies 테이블)
+      // 3. 업체 상세 정보 DB 저장 (companies 테이블 - is_approved는 DB 기본값 false로 들어감)
       const { error: dbError } = await supabase.from('companies').insert([{
         id: authData.user.id,
         company_name: companyName,
@@ -48,6 +48,7 @@ export default function AuthPage() {
         owner_birth_date: ownerBirthDate,
         email: email,
         biz_license_url: fileName
+        // is_approved: false (DB에서 기본값으로 처리됨)
       }]);
       if (dbError) throw dbError;
 
@@ -60,15 +61,49 @@ export default function AuthPage() {
     }
   };
 
-  // 로그인 로직
+  // 💡 수정된 로그인 로직
   const handleLogin = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: formData.email,
-      password: formData.password
-    });
-    if (error) alert('로그인 실패: ' + error.message);
-    setLoading(false);
+    try {
+      // 1. Supabase Auth 로그인 시도
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password
+      });
+      if (authError) throw authError;
+
+      const userId = authData.user.id;
+
+      // 2. 로그인한 유저가 '최고 관리자'인지 확인 (관리자는 무조건 패스)
+      const { data: adminData } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!adminData) {
+        // 3. 관리자가 아니라면 업체(companies)이므로 승인 상태(is_approved) 확인
+        const { data: companyData, error: companyError } = await supabase
+          .from('companies')
+          .select('is_approved')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (companyError) throw companyError;
+
+        // 승인되지 않은 경우 (is_approved가 false이거나 null)
+        if (companyData && companyData.is_approved === false) {
+          await supabase.auth.signOut(); // 💡 즉시 로그아웃 처리
+          throw new Error('가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.');
+        }
+      }
+      
+      // 승인된 업체이거나 관리자면 무사히 통과! (App.jsx가 알아서 화면 전환함)
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

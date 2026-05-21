@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Building2, Receipt, Calendar, Search, 
-  Download, Filter, ArrowUpRight, TrendingUp, AlertCircle, RefreshCw
+  Download, Filter, ArrowUpRight, TrendingUp, AlertCircle, 
+  RefreshCw, Clock, CheckCircle, X, FileText // 💡 X, FileText 아이콘 추가
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
@@ -13,8 +14,13 @@ export default function AdminDashboard() {
   
   const [companies, setCompanies] = useState([]);
   const [billingData, setBillingData] = useState([]);
+  const [pendingCompanies, setPendingCompanies] = useState([]); 
   const [searchTerm, setSearchTerm] = useState('');
   
+  // 💡 업체 상세 정보 모달 상태
+  const [selectedCompany, setSelectedCompany] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   // 조회 기간 상태 (기본값: 이번 달)
   const today = new Date();
   const [dateRange, setDateRange] = useState({
@@ -22,16 +28,28 @@ export default function AdminDashboard() {
     end: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0]
   });
 
-  // 💡 과금 정책 (요구사항에 맞게 수정하여 사용하세요)
+  // 과금 정책
   const PRICING = {
-    BASE_FEE: 30000, // 월 기본 구독료 (3만원)
-    FREE_CLAIMS: 10, // 무료 제공 청구 건수
-    FEE_PER_CLAIM: 1000 // 초과 건당 과금 (1천원)
+    BASE_FEE: 30000,
+    FREE_CLAIMS: 10,
+    FEE_PER_CLAIM: 1000
   };
 
   useEffect(() => {
     checkAdminAndFetchData();
   }, [dateRange]);
+
+  const fetchPendingCompanies = async () => {
+    const { data, error } = await supabase
+      .from('companies') 
+      .select('*')
+      .eq('is_approved', false)
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setPendingCompanies(data);
+    }
+  };
 
   async function checkAdminAndFetchData() {
     setLoading(true);
@@ -39,8 +57,7 @@ export default function AdminDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/login'); return; }
 
-      // 1. 관리자 권한 검증
-      const { data: adminCheck } = await supabase.from('admin_users').select('*').eq('id', user.id).single();
+      const { data: adminCheck } = await supabase.from('admin_users').select('*').eq('id', user.id).maybeSingle();
       if (!adminCheck) {
         alert('최고 관리자 권한이 없습니다. 접근이 차단되었습니다.');
         navigate('/');
@@ -48,23 +65,21 @@ export default function AdminDashboard() {
       }
       setIsAdmin(true);
 
-      // 2. 전체 업체 프로필 가져오기
+      await fetchPendingCompanies();
+
       const { data: allCompanies } = await supabase.from('company_profile').select('*').order('created_at', { ascending: false });
       
-      // 3. 전체 업체의 '해당 기간 내' 청구 내역 가져오기
       const { data: allClaims } = await supabase
         .from('claims')
         .select('*')
         .gte('claim_date', dateRange.start)
         .lte('claim_date', dateRange.end);
 
-      // 4. 업체별 과금 데이터 집계
       const calculatedData = (allCompanies || []).map(company => {
         const companyClaims = (allClaims || []).filter(c => c.company_id === company.company_id);
         const claimCount = companyClaims.length;
         const totalClaimAmount = companyClaims.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
         
-        // 과금 로직 적용
         let extraClaims = claimCount - PRICING.FREE_CLAIMS;
         if (extraClaims < 0) extraClaims = 0;
         const totalBillingFee = PRICING.BASE_FEE + (extraClaims * PRICING.FEE_PER_CLAIM);
@@ -78,7 +93,6 @@ export default function AdminDashboard() {
         };
       });
 
-      // 청구 건수가 많은 순으로 정렬
       calculatedData.sort((a, b) => b.claimCount - a.claimCount);
 
       setCompanies(allCompanies || []);
@@ -91,7 +105,24 @@ export default function AdminDashboard() {
     }
   }
 
-  // 빠른 기간 설정
+  const handleApprove = async (companyId, companyName) => {
+    if (!window.confirm(`[${companyName}] 업체를 가입 승인하시겠습니까?\n승인 즉시 해당 업체는 로그인이 가능해집니다.`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ is_approved: true })
+        .eq('id', companyId);
+
+      if (error) throw error;
+
+      alert(`${companyName} 업체가 성공적으로 승인되었습니다!`);
+      await fetchPendingCompanies(); 
+    } catch (error) {
+      alert('승인 처리 중 오류가 발생했습니다: ' + error.message);
+    }
+  };
+
   const setQuickDate = (type) => {
     const d = new Date();
     let start, end;
@@ -115,7 +146,6 @@ export default function AdminDashboard() {
     (c.representative_name || '').includes(searchTerm)
   );
 
-  // CSV 다운로드 기능 (관리자용 엑셀 내보내기)
   const downloadCSV = () => {
     const headers = ['업체명', '대표자', '연락처', '기간내 청구건수', '기간내 총 청구액', '초과건수', '청구될 과금액(구독료)'];
     const rows = filteredBillingData.map(c => [
@@ -139,6 +169,17 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
+  // 💡 업체 상세 정보 모달 열기/닫기 함수
+  const openCompanyDetails = (company) => {
+    setSelectedCompany(company);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedCompany(null);
+  };
+
   if (loading && !isAdmin) {
     return <div className="h-[80vh] flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
   }
@@ -146,22 +187,140 @@ export default function AdminDashboard() {
   if (!isAdmin) return null;
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans relative">
       
+      {/* 💡 업체 상세 정보 모달 (isModalOpen이 true일 때만 표시) */}
+      {isModalOpen && selectedCompany && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* 모달 헤더 */}
+            <div className="bg-gray-50 border-b border-gray-100 p-6 flex items-center justify-between">
+              <h2 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                <Building2 className="text-indigo-600" /> 업체 상세 정보
+              </h2>
+              <button onClick={closeModal} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-white rounded-full transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* 모달 내용 */}
+            <div className="p-6 md:p-8 space-y-6">
+              <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                <div className="col-span-2">
+                  <p className="text-xs font-bold text-gray-400 mb-1">업체명</p>
+                  <p className="text-lg font-black text-gray-900">{selectedCompany.company_name || '미설정 업체'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400 mb-1">대표자명</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.owner_name || selectedCompany.representative_name || '미등록'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400 mb-1">사업자등록번호</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.biz_reg_number || selectedCompany.business_number || '미등록'}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs font-bold text-gray-400 mb-1">이메일 (아이디)</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.email || '미등록'}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs font-bold text-gray-400 mb-1">연락처</p>
+                  <p className="text-sm font-bold text-gray-700">{selectedCompany.contact_number || '미등록'}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs font-bold text-gray-400 mb-1">승인 상태</p>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black ${selectedCompany.is_approved === false ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {selectedCompany.is_approved === false ? '승인 대기중' : '승인 완료/운영중'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* 사업자등록증 URL이 있는 경우만 버튼 표시 (가입 대기 목록용) */}
+              {selectedCompany.biz_license_url && (
+                <div className="pt-6 border-t border-gray-100">
+                  <a 
+                    href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/biz-licenses/${selectedCompany.biz_license_url}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 py-3 rounded-xl font-bold text-sm transition-colors"
+                  >
+                    <FileText size={18} /> 첨부된 사업자등록증 보기
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 관리자 헤더 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 bg-gray-900 p-6 md:p-8 rounded-[2rem] text-white shadow-xl">
         <div>
           <div className="flex items-center gap-2 text-indigo-400 font-bold mb-2">
             <ShieldCheck size={20} /> SUPER ADMIN
           </div>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tighter">통합 과금 대시보드</h1>
-          <p className="text-gray-400 mt-2 font-medium">플랫폼 내 모든 업체의 사용량 및 구독료를 집계합니다.</p>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tighter">통합 관리 대시보드</h1>
+          <p className="text-gray-400 mt-2 font-medium">업체 가입 승인 및 플랫폼 내 사용량, 구독료를 집계합니다.</p>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
           <button onClick={downloadCSV} className="w-full md:w-auto bg-emerald-500 text-white px-6 py-3.5 rounded-2xl font-black shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2">
             <Download size={18} /> 정산 엑셀 다운로드
           </button>
         </div>
+      </div>
+
+      {/* 신규 가입 대기 목록 섹션 */}
+      <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-100 shadow-sm">
+        <h3 className="text-xl font-black text-gray-900 mb-6 flex items-center gap-2">
+          <Clock className="text-amber-500" /> 신규 가입 승인 대기
+          {pendingCompanies.length > 0 && (
+            <span className="bg-rose-100 text-rose-600 px-3 py-1 rounded-full text-sm font-black animate-pulse">
+              {pendingCompanies.length}건
+            </span>
+          )}
+        </h3>
+
+        {pendingCompanies.length === 0 ? (
+          <div className="text-center py-10 bg-gray-50 rounded-2xl text-gray-400 font-bold border border-dashed border-gray-200">
+            현재 승인 대기 중인 신규 업체가 없습니다.
+          </div>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left whitespace-nowrap min-w-[800px]">
+              <thead className="bg-gray-50 text-[12px] font-black text-gray-500 uppercase tracking-widest">
+                <tr>
+                  <th className="px-6 py-4 rounded-l-xl">업체명</th>
+                  <th className="px-6 py-4">대표자</th>
+                  <th className="px-6 py-4">사업자등록번호</th>
+                  <th className="px-6 py-4">아이디(이메일)</th>
+                  <th className="px-6 py-4 rounded-r-xl text-right">승인 관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {pendingCompanies.map(company => (
+                  <tr key={company.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td 
+                      className="px-6 py-4 font-black text-indigo-600 cursor-pointer hover:underline underline-offset-4"
+                      onClick={() => openCompanyDetails(company)} // 💡 모달 오픈 이벤트 추가
+                    >
+                      {company.company_name}
+                    </td>
+                    <td className="px-6 py-4 font-bold text-gray-600">{company.owner_name}</td>
+                    <td className="px-6 py-4 font-bold text-gray-600">{company.biz_reg_number}</td>
+                    <td className="px-6 py-4 font-bold text-gray-400">{company.email}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleApprove(company.id, company.company_name)}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5 ml-auto transition-all shadow-md shadow-emerald-200 hover:scale-[1.02] active:scale-[0.98]"
+                      >
+                        <CheckCircle size={16} /> 가입 승인
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* 요약 통계 카드 */}
@@ -197,7 +356,6 @@ export default function AdminDashboard() {
 
       {/* 필터 영역 */}
       <div className="bg-white p-4 md:p-5 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col xl:flex-row justify-between items-center gap-4">
-        
         <div className="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto">
           <div className="flex items-center gap-2 bg-gray-50 px-4 py-3 rounded-xl border border-gray-100 w-full md:w-auto">
             <Calendar className="text-gray-400 shrink-0" size={18} />
@@ -245,7 +403,12 @@ export default function AdminDashboard() {
               {filteredBillingData.length > 0 ? filteredBillingData.map((comp) => (
                 <tr key={comp.company_id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-5">
-                    <div className="font-black text-gray-900 text-sm">{comp.company_name || '미설정 업체'}</div>
+                    <div 
+                      className="font-black text-indigo-600 text-sm cursor-pointer hover:underline underline-offset-4 w-fit"
+                      onClick={() => openCompanyDetails(comp)} // 💡 모달 오픈 이벤트 추가
+                    >
+                      {comp.company_name || '미설정 업체'}
+                    </div>
                     <div className="text-[11px] text-gray-500 font-bold mt-1">대표: {comp.representative_name || '-'} | {comp.business_number || '사업자번호 미등록'}</div>
                   </td>
                   <td className="px-6 py-5">

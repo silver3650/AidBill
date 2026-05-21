@@ -5,11 +5,18 @@ export default function LogoutButton({ isFullWidth = false }) {
   const handleLogout = async () => {
     if (!window.confirm('정말 로그아웃 하시겠습니까?')) return;
     
-    const { error } = await supabase.auth.signOut();
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // 💡 핵심 수정: 단순히 상태 변화를 기다리지 않고
+      // 강제로 페이지를 새로고침하여 메모리를 초기화합니다.
+      // 이것이 무한 로딩을 방지하는 가장 확실한 방법입니다.
+      window.location.href = '/';
+      
+    } catch (error) {
       alert('로그아웃 실패: ' + error.message);
     }
-    // 로그아웃 시 App.jsx의 onAuthStateChange가 감지하여 자동으로 로그인 페이지로 전환됩니다.
   };
 
   return (

@@ -15,9 +15,9 @@ import CompanyProfile from './components/CompanyProfile';
 import AuthPage from './components/AuthPage';
 import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
-import AdminDashboard from './components/AdminDashboard'; // 👈 추가됨
+import AdminDashboard from './components/AdminDashboard';
 
-// 💡 내부 레이아웃 컴포넌트
+// 💡 1. 원래 있던 내부 레이아웃 컴포넌트 (UI와 모든 기능 100% 그대로 유지)
 function MainLayout({ isAdmin }) {
   const location = useLocation();
   const currentPath = location.pathname;
@@ -34,7 +34,7 @@ function MainLayout({ isAdmin }) {
     { id: 'company', path: '/company', text: '업체 정보', icon: <Building size={22} /> },
   ];
 
-  // 💡 관리자일 경우 메뉴 배열 맨 끝에 최고 관리자 메뉴 추가
+  // 최고 관리자 메뉴 추가 (아이디 'admin'으로 매칭 버그 수정)
   if (isAdmin) {
     menuItems.push({ 
       id: 'admin', 
@@ -139,7 +139,6 @@ function MainLayout({ isAdmin }) {
               <Route path="/devices" element={<Devices />} />
               <Route path="/localGovs" element={<LocalGovernments />} />
               <Route path="/company" element={<CompanyProfile />} />
-              {/* 💡 관리자 권한이 없으면 루트로 리다이렉트 방어 */}
               <Route path="/admin" element={isAdmin ? <AdminDashboard /> : <Navigate to="/" replace />} />
             </Routes>
           </div>
@@ -149,59 +148,94 @@ function MainLayout({ isAdmin }) {
   );
 }
 
-// ... (MainLayout 등 위쪽 코드는 그대로 유지)
-
+// 💡 2. 최상위 App 컴포넌트 (안전 장치가 추가된 최신 로직)
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
 
-  useEffect(() => {
-    // 1. 초기 세션 및 권한 확인
-    const checkSessionAndAdmin = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      
-      if (session?.user) {
-        // 로그인 상태라면 admin_users 테이블 조회
-        const { data } = await supabase.from('admin_users').select('id').eq('email', session.user.email).maybeSingle();
-        setIsAdmin(!!data);
-      } else {
-        setIsAdmin(false);
+  // 관리자 체크 기능 (대소문자 .maybeSingle 로 수정완료)
+  const checkAdminStatus = async (user) => {
+    if (!user) return false;
+    try {
+      const { data, error } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle(); 
+
+      if (error) {
+        console.error("Admin DB 조회 실패:", error.message);
+        return false;
       }
+      return !!data;
+    } catch (err) {
+      console.error("Admin 체크 예외 발생:", err);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    // 💡 안전 장치: Supabase 응답이 지연되어 하얗게 멈추는 현상을 방지하는 2.5초 타임아웃
+    const safetyTimeout = setTimeout(() => {
+      console.warn("인증 체크 시간이 초과되어 강제로 로딩을 해제합니다.");
       setIsCheckingAdmin(false);
+    }, 2500);
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
+        setSession(initialSession);
+        
+        if (initialSession?.user) {
+          const adminActive = await checkAdminStatus(initialSession.user);
+          setIsAdmin(adminActive);
+        }
+      } catch (error) {
+        console.error("초기 인증 설정 에러:", error);
+      } finally {
+        clearTimeout(safetyTimeout);
+        setIsCheckingAdmin(false); // 💡 어떤 에러가 나도 로딩 상태를 무조건 종료시킴
+      }
     };
 
-    checkSessionAndAdmin();
+    initializeAuth();
 
-    // 2. 세션 변경(로그인/로그아웃) 실시간 감지
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        const { data } = await supabase.from('admin_users').select('id').eq('id', session.user.id).maybeSingle();
-        setIsAdmin(!!data);
+    // 실시간 세션 변경 감지
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession);
+      if (currentSession?.user) {
+        const adminActive = await checkAdminStatus(currentSession.user);
+        setIsAdmin(adminActive);
       } else {
         setIsAdmin(false);
       }
       setIsCheckingAdmin(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // 💡 해결: App 최상위를 BrowserRouter로 감싸서 라우팅 에러(하얀 화면) 방지
+  // 로딩 스피너 화면 (하얀 화면 방지)
+  if (isCheckingAdmin) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FAFC]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="text-sm font-bold text-gray-500 mt-4">보안 세션을 연결하는 중...</p>
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
-      {isCheckingAdmin ? (
-        // 세션 및 권한 체크 중일 때 로딩 스피너
-        <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        </div>
-      ) : !session ? (
-        // 세션이 없으면 로그인 페이지
+      {!session ? (
         <AuthPage />
       ) : (
-        // 세션이 있으면 메인 레이아웃 (관리자 권한 전달)
         <MainLayout isAdmin={isAdmin} />
       )}
     </BrowserRouter>

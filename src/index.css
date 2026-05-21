@@ -1,3 +1,4 @@
+/* 💡 1. 폰트 import가 무조건 1등이어야 합니다 */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 
 @tailwind base;
