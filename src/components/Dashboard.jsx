@@ -15,7 +15,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  // 💡 데이터 통계 초기값
   const [stats, setStats] = useState({
     thisMonth: { receipts: 0, claims: 0, amount: 0 },
     prevMonth: { receipts: 0, claims: 0, amount: 0 },
@@ -28,19 +27,29 @@ export default function Dashboard() {
   const [recentClaims, setRecentClaims] = useState([]);
   const [chartFilter, setChartFilter] = useState('monthly');
   const [chartData, setChartData] = useState([]);
-  const [monthToggle, setMonthToggle] = useState('this'); // 'this' | 'prev'
+  const [monthToggle, setMonthToggle] = useState('this'); 
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [chartFilter]);
+    async function initialize() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        navigate('/login');
+        return;
+      }
+      fetchDashboardData(user.id);
+    }
+    initialize();
+  }, [chartFilter, navigate]);
 
-  async function fetchDashboardData() {
+  async function fetchDashboardData(userId) {
     try {
       setLoading(true);
       
+      // 💡 1. 내 업체 데이터만 가져오도록 필터링
       const { data: claims, error } = await supabase
         .from('claims')
         .select('*, customers(name)')
+        .eq('company_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -58,7 +67,6 @@ export default function Dashboard() {
       const prevMonthData = { receipts: 0, claims: 0, amount: 0 };
 
       safeClaims.forEach(c => {
-        // 🚨 Null 안전성 확보 (런타임 에러 방지)
         const claimDateStr = c.claim_date || (c.created_at ? c.created_at.split('T')[0] : '');
         const amount = Number(c.total_amount) || 0;
         const currentStatus = c.status || '대기 중';
@@ -66,27 +74,22 @@ export default function Dashboard() {
         const isClaimed = currentStatus.includes('청구 완료');
         const isSettled = currentStatus === '정산 완료';
 
-        // 1. 파이프라인 분포 계산 (청구 완료는 계산서 발행/미발행 모두 통합)
         if (isClaimed) {
           statusMap['청구 완료']++;
         } else if (statusMap[currentStatus] !== undefined) {
           statusMap[currentStatus]++;
         } else {
-          // 기타 매칭 안되는 상태는 '대기 중'으로 편입
           statusMap['대기 중']++;
         }
 
-        // 2. 미정산 계산 (청구는 완료되었으나 정산 완료가 안된 건)
         if (isClaimed) {
           unsettledCount++;
           unsettledAmount += amount;
         }
 
-        // 3. 누적 전체 데이터
         cumulativeClaims++;
         cumulativeAmount += amount;
 
-        // 4. 이번 달 / 지난 달 분리 계산
         if (claimDateStr.startsWith(thisMonthStr)) {
           thisMonthData.receipts++;
           thisMonthData.amount += amount;
@@ -108,10 +111,8 @@ export default function Dashboard() {
         totalActiveMonth: safeClaims.filter(c => (c.claim_date || '').startsWith(thisMonthStr)).length
       });
 
-      // 최근 내역 5건
       setRecentClaims(safeClaims.slice(0, 5));
 
-      // 💡 차트 데이터 가공
       const trendData = [];
       if (chartFilter === 'weekly') {
         for (let i = 6; i >= 0; i--) {
@@ -140,7 +141,7 @@ export default function Dashboard() {
       
     } catch (error) {
       console.error('대시보드 에러:', error);
-      alert('대시보드 데이터를 불러오는 중 오류가 발생했습니다.');
+      alert('데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -158,14 +159,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-10 font-sans">
-      {/* 상단 헤더 & 기간 토글 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">대시보드</h1>
           <p className="text-sm md:text-base text-gray-500 mt-2 font-medium">실시간 접수/청구 및 파이프라인 현황입니다.</p>
         </div>
         
-        {/* 이번 달 / 지난 달 토글 버튼 */}
         <div className="flex bg-white border border-gray-200 rounded-xl p-1 shadow-sm w-full md:w-auto">
           <button 
             onClick={() => setMonthToggle('this')}
@@ -182,36 +181,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 🚨 요약 카드 그리드 (기간 변경 연동 & 누적/미정산 분리) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-        <StatCard 
-          title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 접수건`} 
-          value={activeData.receipts.toLocaleString()} unit="건" 
-          icon={<Users className="text-blue-600" />} color="bg-blue-50" 
-        />
-        <StatCard 
-          title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 청구 현황`} 
-          value={activeData.amount.toLocaleString()} unit="원" 
-          subText={`청구 완료 ${activeData.claims.toLocaleString()}건`}
-          icon={<FileText className="text-indigo-600" />} color="bg-indigo-50" 
-        />
-        <StatCard 
-          title="누적 청구 금액" 
-          value={stats.cumulative.amount.toLocaleString()} unit="원" 
-          subText={`총 누적 접수 ${stats.cumulative.claims.toLocaleString()}건`}
-          icon={<Banknote className="text-emerald-600" />} color="bg-emerald-50" 
-        />
-        <StatCard 
-          title="미정산 상태 (청구완료)" 
-          value={stats.unsettled.amount.toLocaleString()} unit="원" 
-          subText={`정산 대기 ${stats.unsettled.count.toLocaleString()}건`}
-          icon={<Clock className="text-rose-600" />} color="bg-rose-50" 
-        />
+        <StatCard title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 접수건`} value={activeData.receipts.toLocaleString()} unit="건" icon={<Users className="text-blue-600" />} color="bg-blue-50" />
+        <StatCard title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 청구 현황`} value={activeData.amount.toLocaleString()} unit="원" subText={`청구 완료 ${activeData.claims.toLocaleString()}건`} icon={<FileText className="text-indigo-600" />} color="bg-indigo-50" />
+        <StatCard title="누적 청구 금액" value={stats.cumulative.amount.toLocaleString()} unit="원" subText={`총 누적 접수 ${stats.cumulative.claims.toLocaleString()}건`} icon={<Banknote className="text-emerald-600" />} color="bg-emerald-50" />
+        <StatCard title="미정산 상태 (청구완료)" value={stats.unsettled.amount.toLocaleString()} unit="원" subText={`정산 대기 ${stats.unsettled.count.toLocaleString()}건`} icon={<Clock className="text-rose-600" />} color="bg-rose-50" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-        
-        {/* 청구 현황 차트 영역 */}
         <div className="lg:col-span-2 space-y-6 md:space-y-8">
           <div className="bg-white p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-8">
@@ -223,8 +200,6 @@ export default function Dashboard() {
                 <button onClick={() => setChartFilter('monthly')} className={`flex-1 sm:flex-none px-4 py-2 text-xs md:text-sm font-bold transition-all ${chartFilter === 'monthly' ? 'bg-white text-blue-600 shadow-sm rounded-lg' : 'text-gray-500 hover:text-gray-700'}`}>월간</button>
               </div>
             </div>
-
-            {/* 💡 모바일 가로 스크롤 적용 컨테이너 */}
             <div className="w-full overflow-x-auto custom-scrollbar pb-2">
               <div className="h-60 md:h-72" style={{ minWidth: '600px' }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -233,8 +208,6 @@ export default function Dashboard() {
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9ca3af', fontWeight: 'bold' }} dy={10} />
                     <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={30} />
                     <YAxis yAxisId="right" orientation="right" stroke="#10b981" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => `${(val/10000).toLocaleString()}만`} />
-                    
-                    {/* 🚨 툴팁 포맷팅 완벽 수정: 항목명, 단위(콤마) 반영 */}
                     <Tooltip 
                       cursor={{ fill: '#f8fafc' }} 
                       contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} 
@@ -244,7 +217,6 @@ export default function Dashboard() {
                         return [value, name];
                       }} 
                     />
-                    
                     <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '12px', fontWeight: 'bold' }} />
                     <Bar yAxisId="left" dataKey="count" name="청구건수" fill="#3b82f6" barSize={16} radius={[4, 4, 0, 0]} />
                     <Line yAxisId="right" type="monotone" dataKey="amount" name="청구금액" stroke="#10b981" strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} />
@@ -254,7 +226,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 최근 청구 리스트 */}
           <div className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl overflow-hidden">
             <div className="p-5 md:p-8 border-b border-gray-50 flex justify-between items-center">
               <h3 className="text-lg md:text-xl font-black text-gray-900">최근 청구 내역</h3>
@@ -266,13 +237,8 @@ export default function Dashboard() {
               {recentClaims.length > 0 ? recentClaims.map((claim) => {
                 const isClaimed = claim.status?.includes('청구 완료');
                 const displayStatus = isClaimed ? '청구 완료' : claim.status || '대기 중';
-                
                 return (
-                  <div 
-                    key={claim.id} 
-                    onClick={() => navigate('/claims', { state: { searchTerm: claim.customers?.name } })}
-                    className="p-4 md:p-6 flex items-center justify-between hover:bg-indigo-50/50 cursor-pointer transition-all group"
-                  >
+                  <div key={claim.id} onClick={() => navigate('/claims', { state: { searchTerm: claim.customers?.name } })} className="p-4 md:p-6 flex items-center justify-between hover:bg-indigo-50/50 cursor-pointer transition-all group">
                     <div className="flex items-center gap-3 md:gap-4">
                       <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-100 group-hover:bg-white rounded-xl md:rounded-2xl flex items-center justify-center text-gray-400 shrink-0 transition-colors">
                         <Package size={18} className="md:w-5 md:h-5 group-hover:text-indigo-600 transition-colors" />
@@ -284,9 +250,7 @@ export default function Dashboard() {
                     </div>
                     <div className="text-right flex flex-col items-end shrink-0">
                       <p className="font-black text-sm md:text-base text-gray-900">₩ {Number(claim.total_amount || 0).toLocaleString()}</p>
-                      <span className="text-[9px] md:text-[11px] font-black px-2 py-0.5 md:px-2.5 md:py-1 rounded-md bg-gray-100 text-gray-500 mt-1 inline-block">
-                        {displayStatus}
-                      </span>
+                      <span className="text-[9px] md:text-[11px] font-black px-2 py-0.5 md:px-2.5 md:py-1 rounded-md bg-gray-100 text-gray-500 mt-1 inline-block">{displayStatus}</span>
                     </div>
                   </div>
                 );
@@ -297,14 +261,12 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 상태별 분포 및 알림 (우측 1칸) */}
         <div className="space-y-6 md:space-y-8">
           <div className="bg-white p-6 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl">
             <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-1 md:mb-2">
               <PieChart className="text-purple-600" size={20} /> 실시간 파이프라인
             </h3>
             <p className="text-[11px] md:text-xs font-bold text-gray-400 mb-6 md:mb-8">실제 진행 상태별 점유율</p>
-            
             <div className="space-y-4 md:space-y-5">
               <StatusRow label="정산 완료" count={stats.statusCounts['정산 완료']} total={stats.cumulative.claims} color="bg-emerald-500" />
               <StatusRow label="청구 완료 (전체)" count={stats.statusCounts['청구 완료']} total={stats.cumulative.claims} color="bg-blue-500" />
@@ -320,7 +282,6 @@ export default function Dashboard() {
             <p className="text-indigo-100 text-[11px] md:text-xs font-medium leading-relaxed">
               교부가 완료되었으나 아직 청구 메일이 발송되지 않은 건이 <strong>{stats.statusCounts['교부 완료']}건</strong> 있습니다. 누락되지 않도록 서류를 확인하세요.
             </p>
-            {/* 💡 교부 완료건으로 바로가기 라우팅 */}
             <button 
               onClick={() => navigate('/claims', { state: { statusFilter: '교부 완료' } })}
               className="mt-5 md:mt-6 w-full py-3.5 md:py-4 bg-white text-indigo-600 rounded-xl md:rounded-2xl font-black text-xs md:text-sm hover:bg-indigo-50 transition-all shadow-lg"
@@ -334,7 +295,6 @@ export default function Dashboard() {
   );
 }
 
-// --- 보조 컴포넌트 ---
 function StatCard({ title, value, unit, icon, color, subText }) {
   return (
     <div className="bg-white p-4 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20 hover:scale-[1.02] transition-all flex flex-col justify-between relative overflow-hidden">
@@ -354,7 +314,6 @@ function StatCard({ title, value, unit, icon, color, subText }) {
           <span className="text-xl md:text-3xl font-black text-gray-900 tracking-tighter truncate">{value}</span>
           <span className="text-[10px] md:text-sm font-bold text-gray-400 whitespace-nowrap">{unit}</span>
         </div>
-        {/* 모바일 화면에서는 subText를 하단에 배치 */}
         {subText && (
           <p className="md:hidden text-[9px] font-bold text-gray-400 mt-2 truncate">
             {subText}

@@ -25,7 +25,6 @@ export default function Customers() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
-  // 🚨 Claims.jsx와 100% 동기화된 14대 마스터 택배사 파이프라인 목록
   const courierList = [
     "CJ대한통운", "우체국택배", "롯데택배", "한진택배", "로젠택배", 
     "경동택배", "대신택배", "일양로지스", "천일택배", "건영택배", 
@@ -38,7 +37,6 @@ export default function Customers() {
     zip_code: '', address: '', detail_address: '', signature: null
   });
 
-  // 🚨 수량(quantity) 컬럼 스키마 확장 대응 기본값 세팅
   const [grantData, setGrantData] = useState({
     product_id: '', product_name: '', category: '', 
     carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false 
@@ -62,10 +60,40 @@ export default function Customers() {
   }, [searchTerm]);
 
   async function fetchData() {
-    const { data: custData } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error("인증 에러:", userError);
+      return;
+    }
+
+    // 💡 1. 대상자 목록 조회 시 내 업체 ID로 격리
+    const { data: custData } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('company_id', user.id)
+      .order('created_at', { ascending: false });
+
     const { data: govData } = await supabase.from('local_governments').select('id, name');
-    const { data: prodData } = await supabase.from('devices').select('*');
-    const { data: claimsData } = await supabase.from('claims').select('*').order('claim_date', { ascending: false });
+    
+    // 💡 2. 보조기기 품목 조회 시 내 업체 ID로 격리
+    const { data: prodData } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('company_id', user.id);
+    
+    let claimsData = [];
+    if (custData && custData.length > 0) {
+      const customerIds = custData.map(c => c.id);
+      // 💡 3. 청구 내역 조회 시 내 업체 ID가 들어간 내역만 격리
+      const { data: cData } = await supabase
+        .from('claims')
+        .select('*')
+        .eq('company_id', user.id)
+        .in('customer_id', customerIds) 
+        .order('claim_date', { ascending: false });
+      claimsData = cData || [];
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -115,7 +143,6 @@ export default function Customers() {
     setProducts(prodData || []);
   }
 
-  // 🚨 AI 스마트 입력
   const processAiFile = async (file) => {
     if (!file) return; 
 
@@ -186,6 +213,7 @@ export default function Customers() {
         throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
       }
 
+      // 🚨 정규식 에러 방지를 위해 반드시 한 줄로 유지
       const cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       
@@ -213,10 +241,9 @@ export default function Customers() {
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) processAiFile(file); };
 
-async function handleSave() {
+  async function handleSave() {
     if (!formData.name || !formData.local_gov_id) return alert('성함과 지자체는 필수입니다.');
 
-    // 💡 1. 현재 로그인한 사용자의 정보를 가져옵니다.
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
@@ -225,11 +252,10 @@ async function handleSave() {
 
     const { local_governments, latestClaim, remainingDays, expireDate, ...pureData } = formData;
     
-    // 💡 2. payload에 company_id를 추가합니다.
     const payload = { 
       ...pureData, 
       local_gov_id: parseInt(formData.local_gov_id),
-      company_id: user.id // 추가된 부분
+      company_id: user.id 
     };
     
     if (editingId) {
@@ -273,6 +299,10 @@ async function handleSave() {
       alert('⚠️ 검색창 하단에 뜨는 상품 목록에서 원하시는 상품을 마우스로 클릭해서 선택해주세요!');
       return;
     }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // 💡 교부(Claim) 데이터 저장 시 company_id 포함 확인 완료
     const { error } = await supabase.from('claims').insert([{
       customer_id: selectedCustomer.id,
       product_id: grantData.product_id, 
@@ -281,7 +311,8 @@ async function handleSave() {
       status: '교부 완료',
       claim_date: new Date().toISOString().split('T')[0],
       total_amount: grantData.total_amount,
-      quantity: grantData.quantity
+      quantity: grantData.quantity,
+      company_id: user?.id 
     }]);
     
     if (error) {
@@ -314,23 +345,17 @@ async function handleSave() {
     setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null }); 
   };
 
-  // 🚨 [핵심] 모바일 터치 + PC 마우스 대응 좌표 계산 로직 완벽 최적화
   const getCoordinates = (e) => {
     const c = canvasRef.current;
     if (!c) return { x: 0, y: 0 };
     
-    // 화면에 보여지는 실제 캔버스의 크기와 위치
     const r = c.getBoundingClientRect();
-    
-    // 해상도(width/height)와 실제 렌더링된 크기(getBoundingClientRect)의 비율 계산 (핵심 보정 로직)
     const scaleX = c.width / r.width;
     const scaleY = c.height / r.height;
 
-    // 터치(모바일) 이벤트인지, 마우스(PC) 이벤트인지 구별하여 좌표 추출
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    // 비율을 곱해주어 어긋남 없는 정확한 캔버스 내부 좌표 반환
     return { 
       x: (clientX - r.left) * scaleX, 
       y: (clientY - r.top) * scaleY 
@@ -343,7 +368,7 @@ async function handleSave() {
     const ctx = canvasRef.current.getContext('2d');
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineWidth = 4; // 모바일에서도 선명하게 보이도록 두께 상향
+    ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     setIsDrawing(true);
@@ -351,7 +376,7 @@ async function handleSave() {
 
   const draw = (e) => { 
     if (!isDrawing) return;
-    if (e.cancelable) e.preventDefault(); // 서명 중 화면 스크롤 완벽 방지
+    if (e.cancelable) e.preventDefault(); 
     const { x, y } = getCoordinates(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.lineTo(x, y);
@@ -396,7 +421,7 @@ async function handleSave() {
           {deviceName}
         </p>
         <div className="flex items-center gap-1">
-          <Clock className="text-gray-400" size={12} />
+          <Clock className="text-gray-400" size={12}/>
           {badge}
         </div>
       </div>
@@ -416,23 +441,21 @@ async function handleSave() {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
       
-      {/* 헤더 및 신규등록 버튼 (모바일 반응형) */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">대상자 관리</h1>
-          <p className="text-gray-500 mt-2 font-bold flex items-center gap-2"><Users size={18} className="text-blue-600" /> 총 {customers.length}명 등록됨</p>
+          <p className="text-gray-500 mt-2 font-bold flex items-center gap-2"><Users size={18} className="text-blue-600"/> 총 {customers.length}명 등록됨</p>
         </div>
         <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all">
-          <Plus size={20} /> 신규 대상자 등록
+          <Plus size={20}/> 신규 대상자 등록
         </button>
       </div>
 
       <div className="bg-white p-2 rounded-2xl md:rounded-[2rem] border border-gray-100 shadow-sm flex items-center focus-within:border-blue-200 transition-all font-bold">
-        <Search className="ml-4 md:ml-6 text-gray-400" size={20} />
+        <Search className="ml-4 md:ml-6 text-gray-400" size={20}/>
         <input type="text" placeholder="성함 또는 연락처 검색..." className="w-full p-4 md:p-5 outline-none bg-transparent" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
-      {/* 🚨 [핵심] 모바일 전용 UI: 카드형 뷰 (서명 버튼 최상단 배치) */}
       <div className="block md:hidden space-y-4">
         {currentItems.length > 0 ? (
           currentItems.map((c) => (
@@ -442,7 +465,7 @@ async function handleSave() {
                   <h3 className="text-lg font-black text-gray-900">{c.name} <span className="text-xs text-gray-400 font-bold ml-1">({c.gender})</span></h3>
                   <p className="text-[11px] font-bold text-blue-600 mt-0.5">{c.local_governments?.name || '관할 미지정'}</p>
                 </div>
-                {/* 우측 상단 퀵 액션 (배송, 삭제) */}
+                
                 <div className="flex gap-1.5">
                   <button onClick={() => { setSelectedCustomer(c); setIsGrantModalOpen(true); }} className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center"><Truck size={14}/></button>
                   <button onClick={() => handleDeleteCustomer(c.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={14}/></button>
@@ -453,14 +476,13 @@ async function handleSave() {
                 {renderLifespanStatus(c)}
               </div>
 
-              {/* ⭐️ 가장 중요한 모바일 서명 버튼 ⭐️ */}
               {!c.signature ? (
                 <button onClick={() => openEditModal(c)} className="w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl border border-indigo-100 shadow-sm flex items-center justify-center gap-2 animate-pulse">
-                  <PenTool size={16} /> 대상자 서명하기
+                  <PenTool size={16}/> 대상자 서명하기
                 </button>
               ) : (
                 <button onClick={() => openEditModal(c)} className="w-full py-3 bg-white text-gray-600 font-black rounded-xl border border-gray-200 shadow-sm flex items-center justify-center gap-2">
-                  <Edit3 size={16} /> 정보 및 서명 수정
+                  <Edit3 size={16}/> 정보 및 서명 수정
                 </button>
               )}
             </div>
@@ -470,7 +492,6 @@ async function handleSave() {
         )}
       </div>
 
-      {/* PC 전용 UI: 테이블 뷰 (기존 UI 100% 유지) */}
       <div className="hidden md:block bg-white border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden mt-6">
         <table className="w-full text-left text-sm font-bold">
           <thead>
@@ -497,9 +518,9 @@ async function handleSave() {
                     <td className="p-7 text-center">{c.signature ? <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-md text-xs font-black">완료</span> : <span className="bg-red-50 text-red-600 px-3 py-1 rounded-md text-xs font-black">필요</span>}</td>
                     <td className="p-7 text-center">
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => { setSelectedCustomer(c); setIsGrantModalOpen(true); }} className="p-3 bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Truck size={18} /></button>
-                        <button onClick={() => openEditModal(c)} className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:text-gray-900 transition-all"><Edit3 size={18} /></button>
-                        <button onClick={() => handleDeleteCustomer(c.id)} className="p-3 bg-gray-50 text-gray-300 rounded-xl hover:text-red-500 transition-all"><Trash2 size={18} /></button>
+                        <button onClick={() => { setSelectedCustomer(c); setIsGrantModalOpen(true); }} className="p-3 bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Truck size={18}/></button>
+                        <button onClick={() => openEditModal(c)} className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:text-gray-900 transition-all"><Edit3 size={18}/></button>
+                        <button onClick={() => handleDeleteCustomer(c.id)} className="p-3 bg-gray-50 text-gray-300 rounded-xl hover:text-red-500 transition-all"><Trash2 size={18}/></button>
                       </div>
                     </td>
                   </tr>
@@ -514,7 +535,6 @@ async function handleSave() {
         </table>
       </div>
 
-      {/* 페이지네이션 (공통) */}
       {totalPages > 1 && (
         <div className="py-4 md:p-6 bg-transparent md:bg-white border-none md:border-t md:border-gray-50 flex items-center justify-center gap-2">
           <button 
@@ -522,7 +542,7 @@ async function handleSave() {
             disabled={currentPage === 1}
             className="p-2 rounded-xl text-gray-400 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-all"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={20}/>
           </button>
           
           <div className="flex gap-1">
@@ -546,17 +566,17 @@ async function handleSave() {
             disabled={currentPage === totalPages}
             className="p-2 rounded-xl text-gray-400 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent transition-all"
           >
-            <ChevronRight size={20} />
+            <ChevronRight size={20}/>
           </button>
         </div>
       )}
 
-      {/* 대상자 추가/수정 모달 (모바일 반응형 패딩 적용) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 bg-black/60 backdrop-blur-md overflow-y-auto">
           <div className="bg-white w-full max-w-3xl rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 flex flex-col max-h-[95vh] font-bold">
             <div className="p-6 md:p-10 border-b bg-blue-50/30 flex justify-between items-center shrink-0">
               <h4 className="text-xl md:text-2xl font-black">{editingId ? '대상자 정보 수정' : '신규 대상자 등록'}</h4>
+              
               <button onClick={closeModal} className="p-2 rounded-full hover:bg-white"><X size={24}/></button>
             </div>
             
@@ -577,13 +597,13 @@ async function handleSave() {
                   
                   {!isDragging && (
                     <div className="absolute -top-10 -right-4 p-4 opacity-10 pointer-events-none hidden md:block">
-                      <Sparkles size={160} />
+                      <Sparkles size={160}/>
                     </div>
                   )}
 
                   <div className="flex items-center gap-4 z-10 w-full md:w-auto text-center md:text-left">
                     <div className={`p-4 rounded-2xl backdrop-blur-md shadow-inner transition-colors hidden md:block ${isDragging ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>
-                      <FileText size={28} />
+                      <FileText size={28}/>
                     </div>
                     <div className="w-full">
                       <h5 className={`text-lg md:text-xl font-black mb-1 tracking-tight transition-colors ${isDragging ? 'text-indigo-900' : 'text-white'}`}>
@@ -605,9 +625,9 @@ async function handleSave() {
                     }`}
                   >
                     {isExtracting ? (
-                      <><Loader2 className="animate-spin" size={20} /> 분석 중...</>
+                      <><Loader2 className="animate-spin" size={20}/> 분석 중...</>
                     ) : (
-                      <><Upload size={20} /> 파일 첨부</>
+                      <><Upload size={20}/> 파일 첨부</>
                     )}
                   </button>
                 </div>
@@ -641,7 +661,6 @@ async function handleSave() {
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">상세주소</label><input placeholder="상세주소" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.detail_address} onChange={e => setFormData({...formData, detail_address: e.target.value})} /></div>
               </div>
 
-              {/* 🚨 [핵심] 모바일 최적화 서명 영역 */}
               <div className="space-y-3 pt-6 border-t font-black">
                 <div className="flex justify-between items-center bg-indigo-50 p-3 rounded-t-xl md:rounded-t-2xl">
                   <span className="text-indigo-900 flex items-center gap-1.5"><PenTool size={16}/> 대상자 정자 서명</span>
@@ -654,9 +673,7 @@ async function handleSave() {
                   </button>
                 </div>
                 
-                {/* 모바일 화면에서는 세로 비율을 적절히 조절하여 서명 편의성 확보 */}
                 <div className="w-full aspect-[2/1] md:h-48 bg-white rounded-b-xl md:rounded-b-2xl border-x-2 border-b-2 border-indigo-100 relative overflow-hidden shadow-inner touch-none">
-                  {/* 해상도는 700x300 고해상도로 렌더링하고 css로 100% 채움 */}
                   <canvas 
                     ref={canvasRef} 
                     width={700} height={300}
@@ -682,13 +699,12 @@ async function handleSave() {
         </div>
       )}
       
-      {/* 보조기기 교부 모달 (모바일 반응형 패딩 적용) */}
       {isGrantModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in font-bold">
           <div className="bg-white w-full max-w-lg rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
             <div className="p-6 md:p-8 border-b bg-blue-600 text-white flex justify-between items-center font-black shrink-0">
               <h4 className="text-lg md:text-xl">보조기기 교부</h4>
-              <button onClick={() => setIsGrantModalOpen(false)}><X/></button>
+              <button onClick={() => setIsGrantModalOpen(false)}><X size={24}/></button>
             </div>
             
             <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
@@ -696,7 +712,7 @@ async function handleSave() {
               <div className="space-y-2 relative">
                 <label className="text-xs text-gray-400 ml-1 font-black">품목 선택</label>
                 <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
                   <input 
                     type="text" 
                     placeholder="상품명 검색..." 

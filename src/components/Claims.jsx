@@ -93,9 +93,22 @@ export default function Claims() {
     '정산 완료'
   ];
 
-  useEffect(() => { 
-    fetchData(); 
-    fetchCompanyData();
+  useEffect(() => {
+    async function initialize() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) return;
+      
+      await fetchCompanyData(user.id);
+      await fetchData(user.id);
+    }
+    
+    initialize();
+
+    const script = document.createElement('script');
+    script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => { if (document.body.contains(script)) document.body.removeChild(script); };
   }, []);
 
   useEffect(() => {
@@ -119,16 +132,22 @@ export default function Claims() {
     }
   }, [location.state]);
 
-  async function fetchCompanyData() {
-    const { data } = await supabase.from('company_profile').select('*').eq('id', 1).single();
+  async function fetchCompanyData(userId) {
+    let { data } = await supabase.from('company_profile').select('*').eq('company_id', userId).single();
+    
+    if (!data) {
+      const { data: fallbackData } = await supabase.from('company_profile').select('*').eq('id', 1).single();
+      if (fallbackData) data = fallbackData;
+    }
+    
     if (data) setCompanyInfo(data); 
   }
 
-  async function fetchData() {
+  async function fetchData(userId) {
     setLoading(true);
     try {
-      const { data: claimData } = await supabase.from('claims').select('*').order('claim_date', { ascending: false });
-      const { data: custData } = await supabase.from('customers').select('*').order('name');
+      const { data: claimData } = await supabase.from('claims').select('*').eq('company_id', userId).order('claim_date', { ascending: false });
+      const { data: custData } = await supabase.from('customers').select('*').eq('company_id', userId).order('name');
       const { data: govData } = await supabase.from('local_governments').select('*');
       const { data: deviceData } = await supabase.from('devices').select('*').order('name');
 
@@ -261,19 +280,19 @@ export default function Claims() {
 
   const handleDelete = async (id) => {
     if (window.confirm('이 청구 내역을 영구 삭제하시겠습니까?')) {
+      const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('claims').delete().eq('id', id);
       setActiveModal(null);
-      fetchData();
+      if (user) fetchData(user.id);
     }
   };
 
-const handleCreateSubmit = async () => {
+  const handleCreateSubmit = async () => {
     if (!newData.customer_id || !newData.product_id) { 
       alert('대상자와 교부할 상품을 모두 선택해 주세요.'); 
       return; 
     }
 
-    // 💡 1. 현재 로그인한 사용자의 정보를 가져옵니다.
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -281,14 +300,13 @@ const handleCreateSubmit = async () => {
       return;
     }
 
-    // 💡 2. 데이터 삽입 시 company_id를 함께 전달합니다.
     const { error } = await supabase.from('claims').insert([{
       customer_id: newData.customer_id, 
       product_id: newData.product_id,
       claim_date: newData.claim_date, 
       total_amount: newData.total_amount, 
       status: '대기 중',
-      company_id: user.id // 💡 이 부분이 RLS 정책에 의해 필터링되는 핵심입니다.
+      company_id: user.id
     }]);
 
     if (!error) {
@@ -302,7 +320,7 @@ const handleCreateSubmit = async () => {
       });
       setCustSearchTerm('');
       setProdSearchTerm('');
-      fetchData();
+      fetchData(user.id);
     } else {
       alert('접수 실패: ' + error.message);
     }
@@ -394,7 +412,8 @@ const handleCreateSubmit = async () => {
     if (!error) { 
       alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
-      fetchData(); 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) fetchData(user.id); 
     } else {
       alert('저장 중 오류가 발생했습니다. (DB 구조 확인 필요)');
     }
@@ -405,7 +424,8 @@ const handleCreateSubmit = async () => {
       const { error } = await supabase.from('claims').update({ status: '청구 완료 (계산서 발행)' }).eq('id', id);
       if (!error) {
         alert('세금계산서 정산 연동 프로세스가 승인되었습니다.');
-        fetchData();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) fetchData(user.id);
       } else {
         alert('DB 상태 변경 중 에러가 발생했습니다.');
       }
@@ -417,7 +437,8 @@ const handleCreateSubmit = async () => {
       const { error } = await supabase.from('claims').update({ status: '정산 완료' }).eq('id', id);
       if (!error) {
         alert('대상자 정산 처리가 수동 입금 매핑을 통해 최종 완료로 마감되었습니다.');
-        fetchData();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) fetchData(user.id);
       } else {
         alert('DB 상태 변경 중 오류가 발생했습니다.');
       }
@@ -541,7 +562,8 @@ const handleCreateSubmit = async () => {
         await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
         alert('메일이 성공적으로 전송되었습니다.'); 
         setActiveModal(null); 
-        fetchData();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) fetchData(user.id);
       } catch (err) { 
         alert(`메일 전송에 실패했습니다:\n${err.message || err.toString()}`); 
       } finally { 
@@ -832,10 +854,8 @@ const handleCreateSubmit = async () => {
         `}
       </style>
 
-      {/* --- 실제 화면 UI 영역 (인쇄 시 숨김 처리됨) --- */}
       <div className="print-hide-ui space-y-6 animate-in fade-in duration-700 font-sans pb-24">
         
-        {/* 모바일 반응형 헤더 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">청구/교부 통합 리스트</h1>
@@ -847,7 +867,6 @@ const handleCreateSubmit = async () => {
           </div>
         </div>
 
-        {/* 모바일 반응형 검색/필터 영역 */}
         <div className="flex flex-col xl:grid xl:grid-cols-12 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm font-bold items-center">
           <div className="w-full xl:col-span-3 relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -889,7 +908,6 @@ const handleCreateSubmit = async () => {
           </div>
         </div>
 
-        {/* 🚨 모바일 전용 UI: 카드형 뷰 (PC에서는 숨김) */}
         <div className="block md:hidden space-y-4">
           {currentItems.length > 0 ? currentItems.map((claim) => {
             const s = claim.status;
@@ -939,7 +957,6 @@ const handleCreateSubmit = async () => {
           )}
         </div>
 
-        {/* 🚨 PC 전용 UI: 테이블 뷰 (모바일에서는 숨김) */}
         <div className="hidden md:flex bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex-col">
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
@@ -971,7 +988,6 @@ const handleCreateSubmit = async () => {
                     <td className="py-3 px-5 align-middle">
                       <div className="font-black text-gray-900">{claim.customers?.name}</div>
                       <div className="text-[10px] text-gray-500 font-bold truncate mt-0.5">{claim.customers?.local_governments?.name || '지자체 미정'}</div>
-                      {/* 특이사항 뱃지 표시 */}
                       {claim.notes && (
                         <div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help">
                           <FileText size={10} /> 특이사항 있음
@@ -1012,7 +1028,6 @@ const handleCreateSubmit = async () => {
           </table>
         </div>
 
-        {/* 공통 페이지네이션 */}
         {filteredClaims.length > 0 && (
           <div className="flex justify-between items-center px-4 md:px-6 py-4 bg-transparent md:bg-gray-50/50 border-t-0 md:border-t border-gray-100">
             <div className="hidden md:block text-xs font-bold text-gray-500">
@@ -1051,7 +1066,6 @@ const handleCreateSubmit = async () => {
           </div>
         )}
 
-        {/* 신규 접수 & 상품 할당 모달 */}
         {activeModal === 'create' && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-lg rounded-3xl md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
@@ -1116,7 +1130,6 @@ const handleCreateSubmit = async () => {
           </div>
         )}
 
-        {/* 입금일 등록 모달 */}
         {activeModal === 'settlement' && selectedClaim && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6">
             <div className="bg-white w-full max-w-sm rounded-3xl p-6 md:p-8 shadow-2xl">
@@ -1126,14 +1139,18 @@ const handleCreateSubmit = async () => {
                 <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-sm">취소</button>
                 <button onClick={async () => {
                     const { error } = await supabase.from('claims').update({ status: '정산 완료', deposit_date: depositDate }).eq('id', selectedClaim.id);
-                    if (!error) { alert('정산 완료 처리되었습니다.'); setActiveModal(null); fetchData(); }
+                    if (!error) { 
+                      alert('정산 완료 처리되었습니다.'); 
+                      setActiveModal(null); 
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (user) fetchData(user.id);
+                    }
                 }} className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm">완료</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* 종합 편집 모달 (모바일 최적화) */}
         {activeModal === 'edit' && selectedClaim && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-2xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
@@ -1258,7 +1275,6 @@ const handleCreateSubmit = async () => {
           </div>
         )}
 
-        {/* 이메일 발송 모달 (모바일 최적화) */}
         {activeModal === 'email' && selectedClaim && (
           <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-5xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1324,7 +1340,6 @@ const handleCreateSubmit = async () => {
           </div>
         )}
 
-        {/* 인쇄 선택 및 미리보기 모달 (모바일 최적화) */}
         {activeModal === 'print' && selectedClaim && (
           <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
              <div className="bg-white w-full max-w-6xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
@@ -1383,7 +1398,6 @@ const handleCreateSubmit = async () => {
         )}
       </div>
 
-      {/* 이메일 PDF 변환 전용 백업 레이어 (인쇄 시 숨김 처리됨) */}
       <div className="print-hide-ui" style={{ position: 'absolute', top: '-9999px', left: '-9999px', zIndex: -9999 }}>
         <div ref={pdfContainerRef} style={{ width: '210mm' }}>
           {selectedClaim && Object.keys(emailData.files).filter(k => emailData.files[k]).map((fileName) => (
@@ -1394,7 +1408,6 @@ const handleCreateSubmit = async () => {
         </div>
       </div>
 
-      {/* --- 인쇄 전용 출력 레이어 (일반 화면에서는 숨김, 프린트(Ctrl+P) 시에만 표시됨) --- */}
       {isPrintDocPreview && selectedClaim && (
         <div className="print-page-area">
           {standardDocs.filter(docName => printFiles[docName]).map((fileName, idx) => (

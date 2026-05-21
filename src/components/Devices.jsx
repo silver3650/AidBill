@@ -45,9 +45,19 @@ export default function Devices() {
   useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
+    // 💡 1. 현재 로그인한 업체의 계정 정보를 가져옵니다.
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error("인증 에러:", userError);
+      return;
+    }
+
+    // 💡 2. 본인 업체(company_id)가 등록한 품목만 불러오도록 필터링합니다.
     const { data } = await supabase
       .from('devices')
       .select('*')
+      .eq('company_id', user.id)
       .order('created_at', { ascending: false });
     setDevices(data || []);
   }
@@ -72,6 +82,13 @@ export default function Devices() {
       return alert('품목명, 카테고리, 단가는 필수 입력 항목입니다!');
     }
 
+    // 💡 3. 저장 시에도 사용자 확인 후 company_id를 추가하여 권한을 부여합니다.
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+      return;
+    }
+
     const payload = {
       name: formData.name,
       category: finalCategory,
@@ -79,7 +96,8 @@ export default function Devices() {
       tax_type: formData.tax_type,
       manufacturer: formData.manufacturer,
       lifespan: formData.lifespan,
-      image: formData.image
+      image: formData.image,
+      company_id: user.id // 등록하는 업체의 ID 저장
     };
 
     if (editingId) {
