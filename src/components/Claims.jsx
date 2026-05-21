@@ -126,7 +126,7 @@ export default function Claims() {
       
       setCustSearchTerm(passedName); 
       setProdSearchTerm('');
-      setActiveModal('create');      
+      setActiveModal('create');     
       
       window.history.replaceState({}, document.title);
     }
@@ -488,11 +488,51 @@ export default function Claims() {
     return initialFiles;
   };
 
+  // 💡 선택 가능한 지자체 이메일 목록을 추출하는 헬퍼 함수
+  const getEmailOptions = () => {
+    if (!selectedClaim || !selectedClaim.customers?.local_governments) return [];
+    const gov = selectedClaim.customers.local_governments;
+    const options = [];
+    
+    if (gov.email) {
+      options.push(`${gov.email} (${gov.name}/${gov.manager_name || '대표'})`);
+    }
+    
+    let managers = [];
+    if (typeof gov.managers === 'string') {
+      try { managers = JSON.parse(gov.managers); } catch(e) {}
+    } else if (Array.isArray(gov.managers)) {
+      managers = gov.managers;
+    }
+
+    managers.forEach(m => {
+      if (m.email) {
+        options.push(`${m.email} (${gov.name}/${m.name || '담당자'})`);
+      }
+    });
+    
+    return [...new Set(options)]; // 중복 제거
+  };
+
   const openEmailModal = (claim) => {
     setSelectedClaim(claim);
     setIssueDate(new Date().toISOString().split('T')[0]); 
     const gov = claim.customers?.local_governments || {};
-    const recipient = gov.email ? `${gov.email} (${gov.name}/${gov.manager_name || '담당자'})` : '';
+    
+    let managers = [];
+    if (typeof gov.managers === 'string') {
+      try { managers = JSON.parse(gov.managers); } catch(e) {}
+    } else if (Array.isArray(gov.managers)) {
+      managers = gov.managers;
+    }
+
+    // 기본 수신자 세팅 로직 (대표이메일 우선, 없으면 첫번째 담당자)
+    let defaultRecipient = '';
+    if (gov.email) {
+      defaultRecipient = `${gov.email} (${gov.name}/${gov.manager_name || '대표'})`;
+    } else if (managers.length > 0 && managers[0].email) {
+      defaultRecipient = `${managers[0].email} (${gov.name}/${managers[0].name || '담당자'})`;
+    }
     
     const initialFiles = getInitialFilesFromGov(claim); 
     
@@ -502,7 +542,7 @@ export default function Claims() {
     const currentEmail = companyInfo.email || '';
 
     setEmailData({ 
-      recipient, 
+      recipient: defaultRecipient, 
       sender: companyInfo.email, 
       files: initialFiles,
       subject: `장애인 보조기기 교부 관련 비용청구서 송부의 건(${currentCustomerName})`, 
@@ -1291,7 +1331,32 @@ export default function Claims() {
                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-1">* 청구서, 교부확인서(하단), 거래명세서에 일괄 반영됩니다.</p>
                         <input type="date" className="w-full bg-white p-2.5 rounded-xl outline-none text-sm font-bold border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                       </div>
-                      <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-gray-200" value={emailData.recipient} onChange={e => setEmailData({...emailData, recipient: e.target.value})} placeholder="수신 이메일" />
+                      
+                      {/* 💡 개선된 수신자 선택 및 입력 UI */}
+                      <div className="space-y-2">
+                        <label className="text-[11px] text-blue-600 uppercase font-black block">수신자 이메일 설정</label>
+                        {getEmailOptions().length > 0 && (
+                          <select 
+                            className="w-full bg-blue-50/50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-blue-100 transition-colors"
+                            onChange={(e) => {
+                              if (e.target.value) setEmailData({...emailData, recipient: e.target.value});
+                            }}
+                            value={getEmailOptions().includes(emailData.recipient) ? emailData.recipient : ""}
+                          >
+                            <option value="" disabled>-- 지자체 담당자 선택 --</option>
+                            {getEmailOptions().map((opt, i) => (
+                              <option key={i} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        )}
+                        <input 
+                          className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" 
+                          value={emailData.recipient} 
+                          onChange={e => setEmailData({...emailData, recipient: e.target.value})} 
+                          placeholder="수신 이메일 직접 수정/입력 가능" 
+                        />
+                      </div>
+
                       <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm font-black text-gray-900 border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
                       <textarea className="w-full h-32 md:h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
                     </div>
