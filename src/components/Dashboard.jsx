@@ -29,20 +29,25 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState([]);
   const [monthToggle, setMonthToggle] = useState('this'); 
 
+  // Dashboard.jsx 내부
+
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        // 💡 통신 지연을 막기 위해 무거운 getUser 대신 로컬 세션을 빠르게 확인
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await fetchDashboardData(session.user.id);
-        } else {
-          setLoading(false);
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        // 💡 세션이 없거나 에러가 나면 무한 로딩을 돌리지 말고 즉시 로그인 창으로 쫓아냅니다.
+        if (error || !session?.user) {
+          window.location.href = '/'; 
+          return;
         }
+        
+        await fetchDashboardData(session.user.id);
       } catch(e) {
         console.error("세션 확인 에러:", e);
-        setLoading(false); // 에러가 나도 무조건 로딩은 끔!
+      } finally {
+        setLoading(false); 
       }
     }
     load();
