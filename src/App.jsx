@@ -29,7 +29,7 @@ function SessionTimeoutHandler({ children }) {
     } catch (e) {
       console.error('자동 로그아웃 에러:', e);
     } finally {
-      // 💡 핵심 수정: 잔여 좀비 세션으로 인한 데이터 증발 버그를 막기 위해 강제 새로고침
+      // 잔여 좀비 세션으로 인한 데이터 증발 버그를 막기 위해 강제 새로고침
       window.location.replace('/'); 
     }
   }, []);
@@ -221,30 +221,32 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    // 💡 핵심 수정: 초기 로딩과 인증 리스너 충돌(Race Condition)을 원천 차단
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        const { data: sessionData, error } = await supabase.auth.getSession();
         if (error) throw error;
         
+        const initialSession = sessionData?.session;
         if (initialSession) {
           setSession(initialSession);
-          // 관리자 권한 및 회사 정보 조회가 100% 끝날 때까지 대기 (무한루프/하얀화면 해결)
           await loadUserData(initialSession.user);
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        if (isMounted) setIsCheckingAdmin(false); 
+        // 💡 핵심 수정 1: isMounted 조건 제거. 
+        // React 18의 Strict Mode에서 마운트/언마운트 반복 시 상태가 어긋나 무한 스피너가 도는 현상을 방지합니다.
+        setIsCheckingAdmin(false); 
       }
     };
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+    // 💡 핵심 수정 2: 구독 해제 시 에러 방지를 위해 객체 파괴 구조 할당을 안전하게 처리합니다.
+    const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!isMounted) return;
       
-      // 이미 initializeAuth에서 최초 로드를 처리하므로 INITIAL_SESSION은 스킵
+      // 이미 initializeAuth에서 최초 로드를 처리하므로 스킵
       if (event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
@@ -259,9 +261,17 @@ export default function App() {
       }
     });
 
+    // 💡 핵심 수정 3: 네트워크 지연 등으로 인한 무한 스피너 방지용 안전장치 (5초 후 무조건 해제)
+    const timeoutId = setTimeout(() => {
+      setIsCheckingAdmin(false);
+    }, 5000);
+
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      clearTimeout(timeoutId);
+      if (authListener && authListener.data && authListener.data.subscription) {
+        authListener.data.subscription.unsubscribe();
+      }
     };
   }, []);
 

@@ -24,20 +24,40 @@ export default function CompanyProfile() {
   });
 
   useEffect(() => {
+    let isMounted = true;
     const script = document.createElement('script');
     script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
     script.async = true;
     document.body.appendChild(script);
+    
+    async function fetchCompanyData() {
+      try {
+        // 💡 수정됨: getUser() 통신 지연 방지를 위해 getSession() 활용
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+        
+        const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
+        
+        if (data && isMounted) {
+          // 💡 수정됨: 새로 추가된 필드가 DB에서 누락되어 넘어오더라도 기존 초기 상태값을 날리지 않도록 병합(Merge)
+          setFormData(prev => ({ 
+            ...prev, 
+            ...data, 
+            qualifying_docs: data.qualifying_docs || prev.qualifying_docs 
+          }));
+        }
+      } catch(e) {
+        console.error("데이터 로딩 오류:", e);
+      }
+    }
+    
     fetchCompanyData();
-    return () => { document.body.removeChild(script); };
+    
+    return () => { 
+      isMounted = false;
+      document.body.removeChild(script); 
+    };
   }, []);
-
-  async function fetchCompanyData() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase.from('company_profile').select('*').eq('company_id', user.id).maybeSingle();
-    if (data) setFormData({ ...data, qualifying_docs: data.qualifying_docs || [] });
-  }
 
   const handleAddressSearch = () => {
     if (!window.daum || !window.daum.Postcode) return alert('주소 검색 서비스를 불러오는 중입니다.');
@@ -110,15 +130,22 @@ export default function CompanyProfile() {
   };
 
   async function handleSave() {
+    if (isLoading) return;
     setIsLoading(true);
+
+    // 💡 수정됨: 무한 스피너 방지를 위한 10초 강제 해제 안전장치 추가
+    const timeoutId = setTimeout(() => {
+      setIsLoading(false);
+      alert("서버 응답이 지연되어 저장이 중단되었습니다. 잠시 후 다시 시도해 주세요.");
+    }, 10000);
+
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        alert('로그인 세션이 만료되었습니다.');
-        return;
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        throw new Error('로그인 세션이 만료되었습니다. 새로고침 후 다시 시도해주세요.');
       }
 
-      const payload = { ...formData, company_id: user.id };
+      const payload = { ...formData, company_id: session.user.id };
 
       const { error } = await supabase
         .from('company_profile')
@@ -127,11 +154,21 @@ export default function CompanyProfile() {
       if (error) throw error; 
 
       alert('업체 정보가 성공적으로 저장되었습니다.');
-      fetchCompanyData();
+      
+      // 저장 직후 최신 데이터를 다시 안전하게 병합
+      const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
+      if (data) {
+        setFormData(prev => ({ 
+          ...prev, 
+          ...data, 
+          qualifying_docs: data.qualifying_docs || prev.qualifying_docs 
+        }));
+      }
     } catch (error) {
       console.error(error);
-      alert('저장 실패: 데이터 용량이 초과되었거나 서버 연결이 불안정합니다.\n' + (error.message || ''));
+      alert('저장 실패: 데이터 형식이 맞지 않거나 서버 연결이 불안정합니다.\n' + (error.message || ''));
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }

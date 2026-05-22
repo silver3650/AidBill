@@ -30,31 +30,40 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState([]);
   const [monthToggle, setMonthToggle] = useState('this'); 
 
-  // 💡 1. 최초 1회 렌더링 시 인증 검사 및 DB 데이터 (청구 내역 + 대상자 목록) 동시 로드
+  // 💡 1. 최초 1회 렌더링 시 인증 검사 및 DB 데이터 동시 로드
   useEffect(() => {
     let isMounted = true;
+    let timeoutId;
+
     async function initializeDashboard() {
-      setLoading(true);
       try {
-        const { data: { user }, error } = await supabase.auth.getUser();
+        // 💡 수정됨: getUser() 대신 getSession() 사용
+        // 서버 통신 에러로 인한 일시적인 데이터 증발(빈 화면) 현상을 방지합니다.
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        // 💡 무한 루프 핵심 원인 해결: App.jsx가 라우팅을 관리하므로 여기서 억지로 튕겨내지 않고 중단만 합니다.
-        if (error || !user) {
+        if (sessionError || !session || !session.user) {
+          if (isMounted) setLoading(false);
           return; 
         }
         
-        // 💡 청구 데이터와 대상자 데이터를 병렬로 동시에 불러옵니다.
+        const user = session.user;
+
+        // 청구 데이터와 대상자 데이터를 병렬로 동시에 불러옵니다.
         const [claimsRes, custRes] = await Promise.all([
           supabase.from('claims').select('*').eq('company_id', user.id).order('created_at', { ascending: false }),
           supabase.from('customers').select('id, name').eq('company_id', user.id)
         ]);
 
         if (claimsRes.error) throw claimsRes.error;
+        if (custRes.error) throw custRes.error;
 
         if (isMounted) {
-          // 💡 청구 내역의 customer_id와 대상자의 id를 매칭하여 '이름'을 결합합니다.
-          const mergedClaims = (claimsRes.data || []).map(claim => {
-            const matchedCust = (custRes.data || []).find(c => String(c.id) === String(claim.customer_id));
+          const claimsData = claimsRes.data || [];
+          const custData = custRes.data || [];
+
+          // 청구 내역의 customer_id와 대상자의 id를 매칭하여 '이름'을 결합합니다.
+          const mergedClaims = claimsData.map(claim => {
+            const matchedCust = custData.find(c => String(c.id) === String(claim.customer_id));
             return {
               ...claim,
               customerName: matchedCust ? matchedCust.name : '대상자 미상'
@@ -70,8 +79,18 @@ export default function Dashboard() {
       }
     }
     
+    setLoading(true);
     initializeDashboard();
-    return () => { isMounted = false; };
+
+    // 💡 수정됨: 안전장치 (네트워크 Hang 발생 시 8초 후 무조건 로딩 스피너 해제)
+    timeoutId = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 8000);
+
+    return () => { 
+      isMounted = false; 
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   // 💡 2. 데이터 가공 로직 (차트 필터가 바뀔 때 DB 재요청 없이 즉시 화면만 갱신)
@@ -132,7 +151,10 @@ export default function Dashboard() {
       cumulative: { claims: cumulativeClaims, amount: cumulativeAmount },
       unsettled: { count: unsettledCount, amount: unsettledAmount },
       statusCounts: statusMap,
-      totalActiveMonth: safeClaims.filter(c => (c.claim_date || '').startsWith(thisMonthStr)).length
+      totalActiveMonth: safeClaims.filter(c => {
+        const dStr = c.claim_date || c.created_at || '';
+        return dStr.startsWith(thisMonthStr);
+      }).length
     });
 
     setRecentClaims(safeClaims.slice(0, 5));
@@ -143,7 +165,10 @@ export default function Dashboard() {
       for (let i = 6; i >= 0; i--) {
         const d = subDays(today, i);
         const fullDate = format(d, 'yyyy-MM-dd');
-        const dayClaims = safeClaims.filter(c => (c.claim_date || c.created_at?.split('T')[0]) === fullDate);
+        const dayClaims = safeClaims.filter(c => {
+          const dStr = c.claim_date || (c.created_at ? c.created_at.split('T')[0] : '');
+          return dStr === fullDate;
+        });
         trendData.push({
           label: format(d, 'MM/dd'),
           count: dayClaims.length,
@@ -154,7 +179,10 @@ export default function Dashboard() {
       for (let i = 5; i >= 0; i--) {
         const d = subMonths(today, i);
         const monthStr = format(d, 'yyyy-MM');
-        const monthClaims = safeClaims.filter(c => (c.claim_date || c.created_at)?.startsWith(monthStr));
+        const monthClaims = safeClaims.filter(c => {
+          const dStr = c.claim_date || c.created_at || '';
+          return dStr.startsWith(monthStr);
+        });
         trendData.push({
           label: format(d, 'MM월'),
           count: monthClaims.length,

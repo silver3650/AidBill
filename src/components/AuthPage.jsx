@@ -28,6 +28,9 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
 
+  // 💡 비동기 통신 중 컴포넌트 언마운트 시 상태 업데이트를 방지하기 위한 Ref
+  const isMountedRef = useRef(true);
+
   const [selectedPlanInfo, setSelectedPlanInfo] = useState(null);
 
   // 💡 약관 동의 상태 및 모달 관리
@@ -42,6 +45,11 @@ export default function AuthPage() {
     subscriptionPlan: 'free' // 기본 선택값을 '프리'로 설정
   });
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // 💡 관리자 설정(app_settings)에서 이용약관/개인정보처리방침 내용 불러오기
   useEffect(() => {
     const fetchSettings = async () => {
@@ -49,17 +57,18 @@ export default function AuthPage() {
         const { data, error } = await supabase
           .from('app_settings')
           .select('terms_of_service, privacy_policy')
-          .single(); // 설정 테이블은 단일 row로 관리한다고 가정
+          .maybeSingle(); 
         
-        if (data) {
+        if (data && isMountedRef.current) {
           if (data.terms_of_service) setTermsText(data.terms_of_service);
           if (data.privacy_policy) setPrivacyText(data.privacy_policy);
         }
       } catch (err) {
-        // 테이블이 아직 없거나 에러 발생 시 기본 안내 문구 출력
-        console.warn("앱 설정 정보를 불러올 수 없습니다. 기본값을 사용합니다.");
-        setTermsText("관리자 페이지에서 '이용약관' 내용을 설정해 주세요.");
-        setPrivacyText("관리자 페이지에서 '개인정보 처리방침' 내용을 설정해 주세요.");
+        if (isMountedRef.current) {
+          console.warn("앱 설정 정보를 불러올 수 없습니다. 기본값을 사용합니다.");
+          setTermsText("관리자 페이지에서 '이용약관' 내용을 설정해 주세요.");
+          setPrivacyText("관리자 페이지에서 '개인정보 처리방침' 내용을 설정해 주세요.");
+        }
       }
     };
     fetchSettings();
@@ -89,6 +98,12 @@ export default function AuthPage() {
     if (!bizLicense) return alert('사업자등록증 파일을 반드시 첨부해 주세요.');
     
     setLoading(true);
+
+    // 무한 스피너 방지용 안전장치 (15초 후 강제 해제)
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current) setLoading(false);
+    }, 15000);
+
     try {
       // 1. Supabase Auth 계정 생성
       const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
@@ -133,7 +148,7 @@ export default function AuthPage() {
         if (dbError) throw new Error(`업체 정보 저장 실패: ${dbError.message}`);
 
         alert('🎉 가입 신청이 완료되었습니다!\n관리자 승인 후 정식으로 이용하실 수 있습니다.');
-        setIsLogin(true);
+        if (isMountedRef.current) setIsLogin(true);
 
       } catch (postError) {
         // 2. 고아 데이터 발생 방지 및 명확한 안내 (클라이언트 롤백 대체)
@@ -145,12 +160,19 @@ export default function AuthPage() {
     } catch (error) {
       alert(translateAuthError(error)); // 한국어 에러 메시지 출력
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
   const handleLogin = async () => {
     setLoading(true);
+
+    // 무한 스피너 방지용 안전장치 (10초 후 강제 해제)
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current) setLoading(false);
+    }, 10000);
+
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: formData.email,
@@ -185,7 +207,9 @@ export default function AuthPage() {
     } catch (error) {
       alert(translateAuthError(error)); // 한국어 에러 메시지 출력
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      // 로그인이 성공하면 App.js의 라우터가 먼저 화면을 엎어버리므로 isMounted 검사가 필수입니다.
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
