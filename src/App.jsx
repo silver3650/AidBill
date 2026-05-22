@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2 
@@ -16,6 +16,41 @@ import AuthPage from './components/AuthPage';
 import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
+
+// 💡 세션 만료 감지 컴포넌트 (추가됨)
+function SessionTimeoutHandler({ children }) {
+  const timeoutRef = useRef(null);
+  const TIMEOUT_DURATION = 30 * 60 * 1000; // 30분을 밀리초로 설정
+
+  const handleLogout = useCallback(async () => {
+    alert('30분 동안 활동이 없어 안전을 위해 자동 로그아웃되었습니다.');
+    await supabase.auth.signOut(); // Supabase 로그아웃 실행 (App.jsx의 onAuthStateChange가 감지하여 상태 초기화)
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(handleLogout, TIMEOUT_DURATION);
+  }, [handleLogout]);
+
+  useEffect(() => {
+    // 감지할 사용자 활동 이벤트 리스트
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    
+    const activityHandler = () => resetTimer();
+
+    // 초기 타이머 시작 및 이벤트 리스너 등록
+    events.forEach(event => document.addEventListener(event, activityHandler));
+    resetTimer();
+
+    // 컴포넌트 언마운트 시 정리 (메모리 누수 방지)
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      events.forEach(event => document.removeEventListener(event, activityHandler));
+    };
+  }, [resetTimer]);
+
+  return <>{children}</>;
+}
 
 // 💡 1. 내부 레이아웃 컴포넌트 (UI 100% 유지 + companyName 프롭스 복구)
 function MainLayout({ isAdmin, companyName }) {
@@ -258,7 +293,10 @@ export default function App() {
       {!session ? (
         <AuthPage />
       ) : (
-        <MainLayout isAdmin={isAdmin} companyName={companyName} />
+        // 💡 인증된 사용자의 경우에만 SessionTimeoutHandler 적용
+        <SessionTimeoutHandler>
+          <MainLayout isAdmin={isAdmin} companyName={companyName} />
+        </SessionTimeoutHandler>
       )}
     </BrowserRouter>
   );

@@ -13,6 +13,16 @@ const SUBSCRIPTION_PLANS = [
   { id: 'enterprise', name: '엔터프라이즈', price: '별도 협의', desc: '무제한 청구 및 맞춤형 커스텀 기능 제공. 보조기기 제조사 및 전국 단위 대형 업체에 적합합니다.' }
 ];
 
+// 💡 4. Supabase 에러 메시지 한국어 변환 헬퍼 함수
+const translateAuthError = (err) => {
+  const msg = err.message || '';
+  if (msg.includes("User already registered")) return "이미 가입된 이메일입니다. 로그인해 주세요.";
+  if (msg.includes("Password should be at least")) return "비밀번호는 최소 6자 이상이어야 합니다.";
+  if (msg.includes("Invalid login credentials")) return "이메일 또는 비밀번호가 올바르지 않습니다.";
+  if (msg.includes("Email not confirmed")) return "이메일 인증이 완료되지 않았습니다.";
+  return `요청 처리 중 문제가 발생했습니다.\n(${msg})`;
+};
+
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -23,7 +33,7 @@ export default function AuthPage() {
   const [formData, setFormData] = useState({
     companyName: '', bizRegNumber: '', ownerName: '',
     ownerBirthDate: '', email: '', password: '', bizLicense: null,
-    subscriptionPlan: 'free' // 💡 기본 선택값을 '프리'로 설정
+    subscriptionPlan: 'free' // 기본 선택값을 '프리'로 설정
   });
 
   const handleInputChange = (e) => {
@@ -42,35 +52,60 @@ export default function AuthPage() {
     
     setLoading(true);
     try {
+      // 1. Supabase Auth 계정 생성
       const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
 
-      const fileExt = bizLicense.name.split('.').pop();
-      const fileName = `${authData.user.id}/license.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from('biz-licenses')
-        .upload(fileName, bizLicense);
-      if (uploadError) throw uploadError;
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("계정 생성에 실패했습니다.");
 
-      // 💡 DB에 subscription_plan 저장
-      const { error: dbError } = await supabase.from('company_profile').insert([{
-        company_id: authData.user.id,
-        company_name: companyName,
-        business_number: bizRegNumber,
-        representative_name: ownerName,
-        representative_birth: ownerBirthDate,
-        email: email,
-        biz_reg_image: fileName,
-        subscription_plan: subscriptionPlan, 
-        is_approved: false
-      }]);
-      
-      if (dbError) throw dbError;
+      try {
+        // 💡 3. 파일 확장자 안전 추출 및 타임스탬프 결합 (고유 파일명 생성)
+        const originalName = bizLicense.name;
+        const lastDotIndex = originalName.lastIndexOf('.');
+        const fileExt = lastDotIndex !== -1 ? originalName.substring(lastDotIndex + 1) : 'png';
+        const fileName = `${userId}/license_${Date.now()}.${fileExt}`;
 
-      alert('가입 신청이 완료되었습니다! 관리자 승인 후 이용 가능합니다.');
-      setIsLogin(true);
+        // 스토리지에 사업자등록증 업로드
+        const { error: uploadError } = await supabase.storage
+          .from('biz-licenses')
+          .upload(fileName, bizLicense);
+        
+        if (uploadError) throw new Error(`파일 첨부 실패: ${uploadError.message}`);
+
+        // 💡 1. 익월 1일 과금 시작일 자동 계산
+        const today = new Date();
+        const nextMonthFirst = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        const billingStartDate = `${nextMonthFirst.getFullYear()}-${String(nextMonthFirst.getMonth() + 1).padStart(2, '0')}-01`;
+
+        // DB에 프로필 정보 저장
+        const { error: dbError } = await supabase.from('company_profile').insert([{
+          company_id: userId,
+          company_name: companyName,
+          business_number: bizRegNumber,
+          representative_name: ownerName,
+          representative_birth: ownerBirthDate,
+          email: email,
+          biz_reg_image: fileName,
+          subscription_plan: subscriptionPlan, 
+          is_approved: false,
+          billing_start_date: billingStartDate // 과금 시작일 세팅
+        }]);
+        
+        if (dbError) throw new Error(`업체 정보 저장 실패: ${dbError.message}`);
+
+        alert('🎉 가입 신청이 완료되었습니다!\n관리자 승인 후 정식으로 이용하실 수 있습니다.');
+        setIsLogin(true);
+
+      } catch (postError) {
+        // 💡 2. 고아 데이터 발생 방지 및 명확한 안내 (클라이언트 롤백 대체)
+        console.error("가입 후속 처리 오류:", postError);
+        alert(`계정은 생성되었으나 추가 정보 저장 중 오류가 발생했습니다.\n번거로우시겠지만 관리자에게 문의해 주세요.\n(사유: ${postError.message})`);
+        await supabase.auth.signOut(); // 비정상 상태이므로 강제 로그아웃 처리
+      }
+
     } catch (error) {
-      alert('회원가입 오류: ' + error.message);
+      alert(translateAuthError(error)); // 한국어 에러 메시지 출력
     } finally {
       setLoading(false);
     }
@@ -87,12 +122,14 @@ export default function AuthPage() {
 
       const userId = authData.user.id;
 
+      // 최고 관리자 여부 확인
       const { data: adminData } = await supabase
         .from('admin_users')
         .select('id')
         .eq('id', userId)
         .maybeSingle();
 
+      // 최고 관리자가 아닌 일반 업체인 경우 승인 여부 확인
       if (!adminData) {
         const { data: companyData, error: companyError } = await supabase
           .from('company_profile')
@@ -100,15 +137,15 @@ export default function AuthPage() {
           .eq('company_id', userId)
           .maybeSingle();
 
-        if (companyError) throw companyError;
+        if (companyError) throw new Error(`업체 정보를 불러올 수 없습니다. (${companyError.message})`);
 
         if (companyData && companyData.is_approved === false) {
-          await supabase.auth.signOut();
-          throw new Error('가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.');
+          await supabase.auth.signOut(); // 미승인 유저는 강제 로그아웃
+          throw new Error('⏳ 가입 승인 대기 중입니다.\n관리자가 정보를 확인하고 승인한 후에 로그인하실 수 있습니다.');
         }
       }
     } catch (error) {
-      alert(error.message);
+      alert(translateAuthError(error)); // 한국어 에러 메시지 출력
     } finally {
       setLoading(false);
     }
@@ -117,7 +154,7 @@ export default function AuthPage() {
   return (
     <div className="min-h-[100dvh] bg-[#F8FAFC] flex items-center justify-center p-4 md:p-6 font-sans overflow-hidden relative">
       
-      {/* 💡 요금제 상세 설명 팝업 모달 */}
+      {/* 요금제 상세 설명 팝업 모달 */}
       {selectedPlanInfo && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -208,7 +245,7 @@ export default function AuthPage() {
                 <input name="email" type="email" placeholder="아이디(이메일)" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 <input name="password" type="password" placeholder="비밀번호 설정" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl border-none font-bold outline-none focus:ring-2 focus:ring-blue-600 text-sm transition-all" onChange={handleInputChange} />
                 
-                {/* 💡 요금제 선택 영역 (복구 완료) */}
+                {/* 요금제 선택 영역 */}
                 <div className="w-full space-y-2 mt-2">
                   <div className="text-[11px] md:text-xs font-bold text-gray-400 pl-1 flex items-center gap-1">
                     <Award size={14} className="text-blue-500" /> 구독 플랜 선택 <span className="font-normal">(클릭하여 상세 확인)</span>
