@@ -34,7 +34,8 @@ export default function Customers() {
   const [formData, setFormData] = useState({
     name: '', gender: '남', birth_date: '', local_gov_id: '',
     disability_type: '', disability_level: '심함', phone: '',
-    zip_code: '', address: '', detail_address: '', signature: null
+    zip_code: '', address: '', detail_address: '', signature: null,
+    qualification: '의료급여' // 💡 자격사항 기본값 추가
   });
 
   const [grantData, setGrantData] = useState({
@@ -67,7 +68,6 @@ export default function Customers() {
       return;
     }
 
-    // 💡 1. 대상자 목록 조회 시 내 업체 ID로 격리
     const { data: custData } = await supabase
       .from('customers')
       .select('*')
@@ -76,7 +76,6 @@ export default function Customers() {
 
     const { data: govData } = await supabase.from('local_governments').select('id, name');
     
-    // 💡 2. 보조기기 품목 조회 시 내 업체 ID로 격리
     const { data: prodData } = await supabase
       .from('devices')
       .select('*')
@@ -85,7 +84,6 @@ export default function Customers() {
     let claimsData = [];
     if (custData && custData.length > 0) {
       const customerIds = custData.map(c => c.id);
-      // 💡 3. 청구 내역 조회 시 내 업체 ID가 들어간 내역만 격리
       const { data: cData } = await supabase
         .from('claims')
         .select('*')
@@ -180,6 +178,7 @@ export default function Customers() {
           "name": "추출된 성명",
           "gender": "남" 또는 "여",
           "birth_date": "YYYY-MM-DD",
+          "qualification": "의료급여, 건강보험, 경감(건강보험) 중 택 1",
           "phone": "010-0000-0000",
           "disability_type": "장애 유형 명칭",
           "disability_level": "심함" 또는 "심하지 않음",
@@ -213,7 +212,6 @@ export default function Customers() {
         throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
       }
 
-      // 🚨 정규식 에러 방지를 위해 반드시 한 줄로 유지
       const cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       
@@ -222,6 +220,13 @@ export default function Customers() {
         if (extractedData.gender && !['남', '여'].includes(extractedData.gender)) {
           extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
         }
+        
+        // AI가 추출한 자격사항이 유효하지 않을 경우 의료급여로 기본값 설정
+        const validQualifications = ['건강보험', '의료급여', '경감(건강보험)'];
+        if (!validQualifications.includes(extractedData.qualification)) {
+          extractedData.qualification = '의료급여';
+        }
+
         setFormData(prev => ({ ...prev, ...extractedData }));
         alert('✅ AI 스마트 입력이 성공적으로 완료되었습니다.');
       } else {
@@ -302,7 +307,6 @@ export default function Customers() {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 💡 교부(Claim) 데이터 저장 시 company_id 포함 확인 완료
     const { error } = await supabase.from('claims').insert([{
       customer_id: selectedCustomer.id,
       product_id: grantData.product_id, 
@@ -328,7 +332,11 @@ export default function Customers() {
   }
 
   const openEditModal = (c) => {
-    setFormData({ ...c, local_gov_id: c.local_gov_id?.toString() || '' }); 
+    setFormData({ 
+      ...c, 
+      local_gov_id: c.local_gov_id?.toString() || '',
+      qualification: c.qualification || '의료급여' // 기존 데이터가 없을 시 기본값
+    }); 
     setEditingId(c.id); setIsModalOpen(true);
     setTimeout(() => { 
       if (c.signature && canvasRef.current) { 
@@ -342,7 +350,7 @@ export default function Customers() {
 
   const closeModal = () => { 
     setIsModalOpen(false); setEditingId(null); 
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null }); 
+    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
   };
 
   const getCoordinates = (e) => {
@@ -462,7 +470,10 @@ export default function Customers() {
             <div key={c.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h3 className="text-lg font-black text-gray-900">{c.name} <span className="text-xs text-gray-400 font-bold ml-1">({c.gender})</span></h3>
+                  <h3 className="text-lg font-black text-gray-900 flex items-center gap-1.5 flex-wrap">
+                    {c.name} <span className="text-xs text-gray-400 font-bold ml-1">({c.gender})</span>
+                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] whitespace-nowrap">{c.qualification || '의료급여'}</span>
+                  </h3>
                   <p className="text-[11px] font-bold text-blue-600 mt-0.5">{c.local_governments?.name || '관할 미지정'}</p>
                 </div>
                 
@@ -512,7 +523,10 @@ export default function Customers() {
                 return (
                   <tr key={c.id} className="hover:bg-blue-50/20 transition-all">
                     <td className="p-7 text-center text-gray-400 font-black">{serialNumber}</td>
-                    <td className="p-7 text-gray-900 font-black">{c.name} ({c.gender})</td>
+                    <td className="p-7 text-gray-900 font-black flex items-center gap-2">
+                      {c.name} ({c.gender})
+                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px]">{c.qualification || '의료급여'}</span>
+                    </td>
                     <td className="p-7 text-gray-700">{c.local_governments?.name || '미지정'}</td>
                     <td className="p-7">{renderLifespanStatus(c)}</td>
                     <td className="p-7 text-center">{c.signature ? <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-md text-xs font-black">완료</span> : <span className="bg-red-50 text-red-600 px-3 py-1 rounded-md text-xs font-black">필요</span>}</td>
@@ -633,10 +647,24 @@ export default function Customers() {
                 </div>
               )}
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">성함</label><input placeholder="성함" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">성별</label><div className="flex bg-gray-50 p-1 rounded-xl md:rounded-2xl">{['남', '여'].map(g => (<button key={g} onClick={() => setFormData({...formData, gender: g})} className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all ${formData.gender === g ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>{g}</button>))}</div></div>
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">생년월일</label><input type="date" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} /></div>
+                
+                {/* 💡 신규 추가된 자격사항 영역 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-gray-400 ml-1">자격사항</label>
+                  <select 
+                    className="w-full bg-indigo-50/50 text-indigo-900 font-black p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none border border-indigo-100" 
+                    value={formData.qualification} 
+                    onChange={e => setFormData({...formData, qualification: e.target.value})}
+                  >
+                    <option value="의료급여">의료급여</option>
+                    <option value="건강보험">건강보험</option>
+                    <option value="경감(건강보험)">경감(건강보험)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
