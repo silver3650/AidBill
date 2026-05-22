@@ -24,144 +24,147 @@ export default function Dashboard() {
     totalActiveMonth: 0
   });
   
+  const [rawClaims, setRawClaims] = useState([]); // DB에서 가져온 원본 데이터 캐싱
   const [recentClaims, setRecentClaims] = useState([]);
   const [chartFilter, setChartFilter] = useState('monthly');
   const [chartData, setChartData] = useState([]);
   const [monthToggle, setMonthToggle] = useState('this'); 
 
-  // Dashboard.jsx 내부
-
+  // 💡 1. 최초 1회 렌더링 시 인증 검사 및 DB 데이터 (청구 내역 + 대상자 목록) 동시 로드
   useEffect(() => {
-    async function load() {
+    let isMounted = true;
+    async function initializeDashboard() {
       setLoading(true);
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { user }, error } = await supabase.auth.getUser();
         
-        // 💡 세션이 없거나 에러가 나면 무한 로딩을 돌리지 말고 즉시 로그인 창으로 쫓아냅니다.
-        if (error || !session?.user) {
-          window.location.href = '/'; 
-          return;
+        // 💡 무한 루프 핵심 원인 해결: App.jsx가 라우팅을 관리하므로 여기서 억지로 튕겨내지 않고 중단만 합니다.
+        if (error || !user) {
+          return; 
         }
         
-        await fetchDashboardData(session.user.id);
+        // 💡 청구 데이터와 대상자 데이터를 병렬로 동시에 불러옵니다.
+        const [claimsRes, custRes] = await Promise.all([
+          supabase.from('claims').select('*').eq('company_id', user.id).order('created_at', { ascending: false }),
+          supabase.from('customers').select('id, name').eq('company_id', user.id)
+        ]);
+
+        if (claimsRes.error) throw claimsRes.error;
+
+        if (isMounted) {
+          // 💡 청구 내역의 customer_id와 대상자의 id를 매칭하여 '이름'을 결합합니다.
+          const mergedClaims = (claimsRes.data || []).map(claim => {
+            const matchedCust = (custRes.data || []).find(c => String(c.id) === String(claim.customer_id));
+            return {
+              ...claim,
+              customerName: matchedCust ? matchedCust.name : '대상자 미상'
+            };
+          });
+          
+          setRawClaims(mergedClaims);
+        }
       } catch(e) {
-        console.error("세션 확인 에러:", e);
+        console.error("대시보드 초기화 에러:", e);
       } finally {
-        setLoading(false); 
+        if (isMounted) setLoading(false); 
       }
     }
-    load();
-  }, [chartFilter]);
+    
+    initializeDashboard();
+    return () => { isMounted = false; };
+  }, []);
 
-  async function fetchDashboardData(userId) {
-    try {
-      // 💡 claims 테이블이 없을 경우를 대비한 1차 방어막
-      const { data: claims, error } = await supabase
-        .from('claims')
-        .select('*') 
-        .eq('company_id', userId)
-        .order('created_at', { ascending: false });
+  // 💡 2. 데이터 가공 로직 (차트 필터가 바뀔 때 DB 재요청 없이 즉시 화면만 갱신)
+  useEffect(() => {
+    if (loading || !rawClaims) return;
 
-      if (error) {
-        console.warn("데이터베이스 접근 오류 (claims 테이블이 없거나 권한이 없을 수 있습니다):", error.message);
-        throw error; // 아래 catch문으로 보냄
-      }
+    const safeClaims = rawClaims;
+    const today = new Date();
+    const thisMonthStr = format(today, 'yyyy-MM');
+    const prevMonthStr = format(subMonths(today, 1), 'yyyy-MM');
+
+    const statusMap = { '대기 중': 0, '배송 중': 0, '교부 완료': 0, '청구 완료': 0, '정산 완료': 0 };
+    let unsettledCount = 0, unsettledAmount = 0;
+    let cumulativeClaims = 0, cumulativeAmount = 0;
+
+    const thisMonthData = { receipts: 0, claims: 0, amount: 0 };
+    const prevMonthData = { receipts: 0, claims: 0, amount: 0 };
+
+    safeClaims.forEach(c => {
+      const claimDateStr = c.claim_date || (c.created_at ? c.created_at.split('T')[0] : '');
+      const amount = Number(c.total_amount) || 0;
+      const currentStatus = c.status || '대기 중';
       
-      const safeClaims = claims || [];
+      const isClaimed = currentStatus.includes('청구 완료');
+      const isSettled = currentStatus === '정산 완료';
 
-      const today = new Date();
-      const thisMonthStr = format(today, 'yyyy-MM');
-      const prevMonthStr = format(subMonths(today, 1), 'yyyy-MM');
-
-      const statusMap = { '대기 중': 0, '배송 중': 0, '교부 완료': 0, '청구 완료': 0, '정산 완료': 0 };
-      let unsettledCount = 0, unsettledAmount = 0;
-      let cumulativeClaims = 0, cumulativeAmount = 0;
-
-      const thisMonthData = { receipts: 0, claims: 0, amount: 0 };
-      const prevMonthData = { receipts: 0, claims: 0, amount: 0 };
-
-      safeClaims.forEach(c => {
-        const claimDateStr = c.claim_date || (c.created_at ? c.created_at.split('T')[0] : '');
-        const amount = Number(c.total_amount) || 0;
-        const currentStatus = c.status || '대기 중';
-        
-        const isClaimed = currentStatus.includes('청구 완료');
-        const isSettled = currentStatus === '정산 완료';
-
-        if (isClaimed) {
-          statusMap['청구 완료']++;
-        } else if (statusMap[currentStatus] !== undefined) {
-          statusMap[currentStatus]++;
-        } else {
-          statusMap['대기 중']++;
-        }
-
-        if (isClaimed) {
-          unsettledCount++;
-          unsettledAmount += amount;
-        }
-
-        cumulativeClaims++;
-        cumulativeAmount += amount;
-
-        if (claimDateStr.startsWith(thisMonthStr)) {
-          thisMonthData.receipts++;
-          thisMonthData.amount += amount;
-          if (isClaimed || isSettled) thisMonthData.claims++;
-        }
-        if (claimDateStr.startsWith(prevMonthStr)) {
-          prevMonthData.receipts++;
-          prevMonthData.amount += amount;
-          if (isClaimed || isSettled) prevMonthData.claims++;
-        }
-      });
-
-      setStats({
-        thisMonth: thisMonthData,
-        prevMonth: prevMonthData,
-        cumulative: { claims: cumulativeClaims, amount: cumulativeAmount },
-        unsettled: { count: unsettledCount, amount: unsettledAmount },
-        statusCounts: statusMap,
-        totalActiveMonth: safeClaims.filter(c => (c.claim_date || '').startsWith(thisMonthStr)).length
-      });
-
-      setRecentClaims(safeClaims.slice(0, 5));
-
-      const trendData = [];
-      if (chartFilter === 'weekly') {
-        for (let i = 6; i >= 0; i--) {
-          const d = subDays(today, i);
-          const fullDate = format(d, 'yyyy-MM-dd');
-          const dayClaims = safeClaims.filter(c => (c.claim_date || c.created_at?.split('T')[0]) === fullDate);
-          trendData.push({
-            label: format(d, 'MM/dd'),
-            count: dayClaims.length,
-            amount: dayClaims.reduce((acc, cur) => acc + (Number(cur.total_amount) || 0), 0)
-          });
-        }
+      if (isClaimed) {
+        statusMap['청구 완료']++;
+      } else if (statusMap[currentStatus] !== undefined) {
+        statusMap[currentStatus]++;
       } else {
-        for (let i = 5; i >= 0; i--) {
-          const d = subMonths(today, i);
-          const monthStr = format(d, 'yyyy-MM');
-          const monthClaims = safeClaims.filter(c => (c.claim_date || c.created_at)?.startsWith(monthStr));
-          trendData.push({
-            label: format(d, 'MM월'),
-            count: monthClaims.length,
-            amount: monthClaims.reduce((acc, cur) => acc + (Number(cur.total_amount) || 0), 0)
-          });
-        }
+        statusMap['대기 중']++;
       }
-      setChartData(trendData);
-      
-    } catch (error) {
-      console.error('대시보드 에러:', error);
-      // 에러가 나도 화면을 하얗게 두지 않고 경고창만 띄움
-      // alert('대시보드 데이터 연동이 필요합니다.'); // 필요시 주석 해제
-    } finally {
-      // 💡 여기가 핵심! 성공하든 실패하든 무조건 로딩 바를 꺼버립니다.
-      setLoading(false);
+
+      if (isClaimed) {
+        unsettledCount++;
+        unsettledAmount += amount;
+      }
+
+      cumulativeClaims++;
+      cumulativeAmount += amount;
+
+      if (claimDateStr.startsWith(thisMonthStr)) {
+        thisMonthData.receipts++;
+        thisMonthData.amount += amount;
+        if (isClaimed || isSettled) thisMonthData.claims++;
+      }
+      if (claimDateStr.startsWith(prevMonthStr)) {
+        prevMonthData.receipts++;
+        prevMonthData.amount += amount;
+        if (isClaimed || isSettled) prevMonthData.claims++;
+      }
+    });
+
+    setStats({
+      thisMonth: thisMonthData,
+      prevMonth: prevMonthData,
+      cumulative: { claims: cumulativeClaims, amount: cumulativeAmount },
+      unsettled: { count: unsettledCount, amount: unsettledAmount },
+      statusCounts: statusMap,
+      totalActiveMonth: safeClaims.filter(c => (c.claim_date || '').startsWith(thisMonthStr)).length
+    });
+
+    setRecentClaims(safeClaims.slice(0, 5));
+
+    // 차트 데이터 계산
+    const trendData = [];
+    if (chartFilter === 'weekly') {
+      for (let i = 6; i >= 0; i--) {
+        const d = subDays(today, i);
+        const fullDate = format(d, 'yyyy-MM-dd');
+        const dayClaims = safeClaims.filter(c => (c.claim_date || c.created_at?.split('T')[0]) === fullDate);
+        trendData.push({
+          label: format(d, 'MM/dd'),
+          count: dayClaims.length,
+          amount: dayClaims.reduce((acc, cur) => acc + (Number(cur.total_amount) || 0), 0)
+        });
+      }
+    } else {
+      for (let i = 5; i >= 0; i--) {
+        const d = subMonths(today, i);
+        const monthStr = format(d, 'yyyy-MM');
+        const monthClaims = safeClaims.filter(c => (c.claim_date || c.created_at)?.startsWith(monthStr));
+        trendData.push({
+          label: format(d, 'MM월'),
+          count: monthClaims.length,
+          amount: monthClaims.reduce((acc, cur) => acc + (Number(cur.total_amount) || 0), 0)
+        });
+      }
     }
-  }
+    setChartData(trendData);
+
+  }, [rawClaims, chartFilter, loading]);
 
   if (loading) {
     return (
@@ -260,8 +263,13 @@ export default function Dashboard() {
                         <Package size={18} className="md:w-5 md:h-5 group-hover:text-indigo-600 transition-colors" />
                       </div>
                       <div>
-                        <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px] group-hover:text-indigo-700 transition-colors">청구 ID: {claim.id ? String(claim.id).substring(0, 8) : '정보 없음'}</p>
-                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-0.5">{claim.claim_date || (claim.created_at ? claim.created_at.split('T')[0] : '날짜 없음')}</p>
+                        {/* 💡 대상자 이름 매핑 완료 */}
+                        <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px] group-hover:text-indigo-700 transition-colors">
+                          {claim.customerName}
+                        </p>
+                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-0.5">
+                          {claim.claim_date || (claim.created_at ? claim.created_at.split('T')[0] : '날짜 없음')}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right flex flex-col items-end shrink-0">

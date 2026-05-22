@@ -304,7 +304,7 @@ export default function Claims() {
       customer_id: newData.customer_id, 
       product_id: newData.product_id,
       claim_date: newData.claim_date, 
-      total_amount: newData.total_amount, 
+      total_amount: parseInt(newData.total_amount) || 0, 
       status: '대기 중',
       company_id: user.id
     }]);
@@ -400,22 +400,25 @@ export default function Claims() {
 
     const payload = {
       claim_date: editData.claim_date,
-      total_amount: editData.total_amount,
+      total_amount: parseInt(editData.total_amount) || 0,
       status: newStatus,
       carrier: editData.carrier,
       tracking_no: editData.tracking_no,
-      receipt_photos: photoFiles,
-      notes: editData.notes
+      // 💡 핵심 수정: 배열을 JSON 문자열로 직렬화하여 Supabase 텍스트 컬럼 충돌 방지
+      receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
+      notes: editData.notes || ''
     };
 
-    const { error } = await supabase.from('claims').update(payload).eq('id', selectedClaim.id);
-    if (!error) { 
+    try {
+      const { error } = await supabase.from('claims').update(payload).eq('id', selectedClaim.id);
+      if (error) throw error;
+      
       alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) fetchData(user.id); 
-    } else {
-      alert('저장 중 오류가 발생했습니다. (DB 구조 확인 필요)');
+    } catch (error) {
+      alert(`저장 중 오류가 발생했습니다.\n상세 사유: ${error.message || JSON.stringify(error)}`);
     }
   };
 
@@ -488,7 +491,6 @@ export default function Claims() {
     return initialFiles;
   };
 
-  // 💡 선택 가능한 지자체 이메일 목록을 추출하는 헬퍼 함수
   const getEmailOptions = () => {
     if (!selectedClaim || !selectedClaim.customers?.local_governments) return [];
     const gov = selectedClaim.customers.local_governments;
@@ -511,7 +513,7 @@ export default function Claims() {
       }
     });
     
-    return [...new Set(options)]; // 중복 제거
+    return [...new Set(options)]; 
   };
 
   const openEmailModal = (claim) => {
@@ -526,7 +528,6 @@ export default function Claims() {
       managers = gov.managers;
     }
 
-    // 기본 수신자 세팅 로직 (대표이메일 우선, 없으면 첫번째 담당자)
     let defaultRecipient = '';
     if (gov.email) {
       defaultRecipient = `${gov.email} (${gov.name}/${gov.manager_name || '대표'})`;
@@ -543,7 +544,7 @@ export default function Claims() {
 
     setEmailData({ 
       recipient: defaultRecipient, 
-      sender: companyInfo.email, 
+      sender: companyInfo.email || '', 
       files: initialFiles,
       subject: `장애인 보조기기 교부 관련 비용청구서 송부의 건(${currentCustomerName})`, 
       content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n참고로 세금계산서는 본 메일과 별개로 발행되어 발송될 예정입니다.\n\n서류를 검토하신 후 의문 사항이 있으시거나 보완이 필요한 점이 있다면\n아래 담당자 연락처로 언제든지 연락 주시기 바랍니다.\n\n감사합니다.\n\n${currentCompanyName} 담당자 배상\nEmail: ${currentEmail}\nTel: ${currentContactNumber}`
@@ -590,16 +591,29 @@ export default function Claims() {
           }
         }
         
-        const { error } = await supabase.functions.invoke('send-claim-email', {
-          body: { to: emailMatch[1], from: emailData.sender, subject: emailData.subject, text: emailData.content, attachments: attachmentsArray, companyName: companyInfo.company_name }
+        // 💡 핵심 수정: 에지 함수 호출 오류 상세 캐치
+        const { error: invokeError } = await supabase.functions.invoke('send-claim-email', {
+          body: { 
+            to: emailMatch[1], 
+            from: emailData.sender || 'no-reply@yourdomain.com', 
+            subject: emailData.subject, 
+            text: emailData.content, 
+            attachments: attachmentsArray, 
+            companyName: companyInfo.company_name 
+          }
         });
         
-        if (error) {
-          console.error('Edge Function Error:', error);
-          throw new Error(error.message || '이메일 발송 서버 응답 오류');
+        if (invokeError) {
+          console.error('Edge Function Error:', invokeError);
+          throw new Error(invokeError.message || '이메일 발송 서버 응답 오류');
         }
         
-        await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
+        // 💡 핵심 수정: 메일 발송 성공 후 DB 상태 변경 시 발생하는 에러 철저히 방어
+        const updateRes = await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
+        if (updateRes.error) {
+          throw new Error(`상태 업데이트 실패: ${updateRes.error.message}`);
+        }
+
         alert('메일이 성공적으로 전송되었습니다.'); 
         setActiveModal(null); 
         const { data: { user } } = await supabase.auth.getUser();
@@ -1158,7 +1172,7 @@ export default function Claims() {
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">청구 금액</label>
-                    <input type="number" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: parseInt(e.target.value) || 0})} />
+                    <input type="number" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value})} />
                   </div>
                 </div>
               </div>
@@ -1227,7 +1241,7 @@ export default function Claims() {
                           </div>
                           <div className="flex-1">
                             <label className="text-[10px] text-gray-400 uppercase block mb-1">청구 금액</label>
-                            <input type="number" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-mono font-bold text-right" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: parseInt(e.target.value)})} />
+                            <input type="number" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-mono font-bold text-right" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} />
                           </div>
                         </div>
                       </div>
@@ -1332,7 +1346,6 @@ export default function Claims() {
                         <input type="date" className="w-full bg-white p-2.5 rounded-xl outline-none text-sm font-bold border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                       </div>
                       
-                      {/* 💡 개선된 수신자 선택 및 입력 UI */}
                       <div className="space-y-2">
                         <label className="text-[11px] text-blue-600 uppercase font-black block">수신자 이메일 설정</label>
                         {getEmailOptions().length > 0 && (

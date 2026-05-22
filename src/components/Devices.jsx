@@ -27,6 +27,7 @@ export default function Devices() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true); // 💡 로딩 상태 추가
 
   // --- 품목 등록 폼 상태 (과세 여부 포함) ---
   const [formData, setFormData] = useState({
@@ -42,24 +43,48 @@ export default function Devices() {
 
   const fileInputRef = useRef(null);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    fetchData(); 
+
+    // 💡 세션 변경(새로고침 복구, 토큰 갱신 등) 감지 리스너 추가
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        fetchData();
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   async function fetchData() {
-    // 💡 1. 현재 로그인한 업체의 계정 정보를 가져옵니다.
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
-    if (userError || !user) {
-      console.error("인증 에러:", userError);
-      return;
-    }
+    setIsLoading(true);
+    try {
+      // 💡 1. 현재 로그인한 업체의 계정 정보를 가져옵니다.
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.warn("인증 세션을 기다리는 중이거나 만료되었습니다.");
+        setDevices([]);
+        return;
+      }
 
-    // 💡 2. 본인 업체(company_id)가 등록한 품목만 불러오도록 필터링합니다.
-    const { data } = await supabase
-      .from('devices')
-      .select('*')
-      .eq('company_id', user.id)
-      .order('created_at', { ascending: false });
-    setDevices(data || []);
+      // 💡 2. 본인 업체(company_id)가 등록한 품목만 불러오도록 필터링합니다.
+      const { data, error } = await supabase
+        .from('devices')
+        .select('*')
+        .eq('company_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDevices(data || []);
+      
+    } catch (error) {
+      console.error("데이터 로드 에러:", error.message);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   // --- 이미지 업로드 처리 ---
@@ -82,49 +107,58 @@ export default function Devices() {
       return alert('품목명, 카테고리, 단가는 필수 입력 항목입니다!');
     }
 
-    // 💡 3. 저장 시에도 사용자 확인 후 company_id를 추가하여 권한을 부여합니다.
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
-      return;
-    }
+    try {
+      // 💡 3. 저장 시에도 사용자 확인 후 company_id를 추가하여 권한을 부여합니다.
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+        return;
+      }
 
-    const payload = {
-      name: formData.name,
-      category: finalCategory,
-      price: Number(formData.price),
-      tax_type: formData.tax_type,
-      manufacturer: formData.manufacturer,
-      lifespan: formData.lifespan,
-      image: formData.image,
-      company_id: user.id // 등록하는 업체의 ID 저장
-    };
+      const payload = {
+        name: formData.name,
+        category: finalCategory,
+        price: Number(formData.price),
+        tax_type: formData.tax_type,
+        manufacturer: formData.manufacturer,
+        lifespan: formData.lifespan,
+        image: formData.image,
+        company_id: user.id // 등록하는 업체의 ID 저장
+      };
 
-    if (editingId) {
-      const { error } = await supabase.from('devices').update(payload).eq('id', editingId);
-      if (error) alert('수정 실패: ' + error.message);
-      else alert('성공적으로 수정되었습니다.');
-    } else {
-      const { error } = await supabase.from('devices').insert([payload]);
-      if (error) alert('저장 실패: ' + error.message);
-      else alert('신규 품목이 등록되었습니다.');
+      if (editingId) {
+        const { error } = await supabase.from('devices').update(payload).eq('id', editingId);
+        if (error) throw error;
+        alert('성공적으로 수정되었습니다.');
+      } else {
+        const { error } = await supabase.from('devices').insert([payload]);
+        if (error) throw error;
+        alert('신규 품목이 등록되었습니다.');
+      }
+      
+      closeModal();
+      fetchData();
+    } catch (error) {
+      alert('저장 실패: ' + error.message);
     }
-    
-    closeModal();
-    fetchData();
   }
 
   // --- 삭제 로직 ---
   async function handleDelete(id) {
     if (!window.confirm('이 품목을 정말 삭제하시겠습니까? (청구 내역에 포함된 기기는 삭제 시 주의가 필요합니다)')) return;
-    const { error } = await supabase.from('devices').delete().eq('id', id);
-    if (!error) fetchData();
+    try {
+      const { error } = await supabase.from('devices').delete().eq('id', id);
+      if (error) throw error;
+      fetchData();
+    } catch (error) {
+      alert('삭제 실패: ' + error.message);
+    }
   }
 
   // --- 모달 제어 ---
   const openEditModal = (device) => {
     const isStandardCategory = NHIS_CATEGORIES.includes(device.category);
-    
     setFormData({
       name: device.name,
       category: isStandardCategory ? device.category : 'custom',
@@ -159,6 +193,7 @@ export default function Devices() {
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">보조기기 품목</h1>
           <p className="text-gray-500 mt-2 font-medium text-sm md:text-base">청구 가능한 장애인보조기기 단가 및 카테고리를 관리합니다.</p>
         </div>
+      
         <button 
           onClick={() => setIsModalOpen(true)}
           className="w-full md:w-auto bg-indigo-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:scale-105 transition-all"
@@ -205,6 +240,7 @@ export default function Devices() {
                 >
                   <Edit3 size={16}/>
                 </button>
+                
                 <button 
                   onClick={(e) => { e.stopPropagation(); handleDelete(device.id); }} 
                   className="w-8 h-8 bg-white/90 border border-gray-200 md:border-transparent backdrop-blur rounded-lg flex items-center justify-center text-gray-600 hover:text-red-500 shadow-sm"
@@ -229,7 +265,7 @@ export default function Devices() {
               <h4 className="text-lg md:text-xl font-black text-gray-900 tracking-tight leading-tight mb-2 line-clamp-2">
                 {device.name}
               </h4>
-              
+  
               <div className="mt-auto pt-3 md:pt-4 space-y-1">
                 <p className="text-[11px] md:text-xs font-bold text-gray-400 flex items-center gap-1.5">
                   <Building2 size={12}/> {device.manufacturer || '제조사 미상'}
@@ -250,7 +286,8 @@ export default function Devices() {
           </div>
         ))}
 
-        {filteredDevices.length === 0 && (
+        {/* 💡 로딩 중이 아닐 때만 빈 화면 표시 */}
+        {!isLoading && filteredDevices.length === 0 && (
            <div className="col-span-full py-16 md:py-20 text-center bg-gray-50 rounded-[2rem] md:rounded-[3rem] border-2 border-dashed border-gray-200">
              <Package size={40} className="mx-auto mb-4 text-gray-300 md:w-12 md:h-12" />
              <p className="text-sm md:text-base text-gray-500 font-bold">등록된 품목이 없거나 검색 결과가 없습니다.</p>

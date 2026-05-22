@@ -17,32 +17,35 @@ import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
 
-// 💡 세션 만료 감지 컴포넌트 (추가됨)
+// 💡 세션 만료 감지 컴포넌트
 function SessionTimeoutHandler({ children }) {
   const timeoutRef = useRef(null);
   const TIMEOUT_DURATION = 30 * 60 * 1000; // 30분을 밀리초로 설정
 
   const handleLogout = useCallback(async () => {
     alert('30분 동안 활동이 없어 안전을 위해 자동 로그아웃되었습니다.');
-    await supabase.auth.signOut(); // Supabase 로그아웃 실행 (App.jsx의 onAuthStateChange가 감지하여 상태 초기화)
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('자동 로그아웃 에러:', e);
+    } finally {
+      // 💡 핵심 수정: 잔여 좀비 세션으로 인한 데이터 증발 버그를 막기 위해 강제 새로고침
+      window.location.replace('/'); 
+    }
   }, []);
 
   const resetTimer = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(handleLogout, TIMEOUT_DURATION);
-  }, [handleLogout]);
+  }, [handleLogout, TIMEOUT_DURATION]);
 
   useEffect(() => {
-    // 감지할 사용자 활동 이벤트 리스트
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    
     const activityHandler = () => resetTimer();
 
-    // 초기 타이머 시작 및 이벤트 리스너 등록
     events.forEach(event => document.addEventListener(event, activityHandler));
     resetTimer();
 
-    // 컴포넌트 언마운트 시 정리 (메모리 누수 방지)
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       events.forEach(event => document.removeEventListener(event, activityHandler));
@@ -52,14 +55,13 @@ function SessionTimeoutHandler({ children }) {
   return <>{children}</>;
 }
 
-// 💡 1. 내부 레이아웃 컴포넌트 (UI 100% 유지 + companyName 프롭스 복구)
+// 내부 레이아웃 컴포넌트
 function MainLayout({ isAdmin, companyName }) {
   const location = useLocation();
   const currentPath = location.pathname;
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // 기본 메뉴
   let menuItems = [
     { id: 'dashboard', path: '/', text: '대시보드', icon: <LayoutDashboard size={22} /> },
     { id: 'claims', path: '/claims', text: '청구 관리', icon: <FileText size={22} /> },
@@ -69,7 +71,6 @@ function MainLayout({ isAdmin, companyName }) {
     { id: 'company', path: '/company', text: '업체 정보', icon: <Building size={22} /> },
   ];
 
-  // 최고 관리자 메뉴 추가
   if (isAdmin) {
     menuItems.push({ 
       id: 'admin', 
@@ -88,7 +89,6 @@ function MainLayout({ isAdmin, companyName }) {
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden">
       
-      {/* 모바일 사이드바 오버레이 */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity" 
@@ -96,7 +96,6 @@ function MainLayout({ isAdmin, companyName }) {
         />
       )}
 
-      {/* 사이드바 */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-gray-100 flex flex-col p-6 shadow-2xl transition-transform duration-300 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -136,16 +135,12 @@ function MainLayout({ isAdmin, companyName }) {
           })}
         </nav>
 
-        {/* 사이드바 하단 로그아웃 */}
         <div className="pt-6 border-t border-gray-50 mt-4 shrink-0">
           <LogoutButton isFullWidth />
         </div>
       </aside>
 
-      {/* 메인 콘텐츠 */}
       <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
-        
-        {/* 헤더 */}
         <header className="h-16 md:h-20 shrink-0 bg-white/80 backdrop-blur-md border-b border-gray-50 flex items-center justify-between px-4 md:px-10 z-10 sticky top-0 w-full">
           <div className="flex items-center gap-3">
             <button 
@@ -160,14 +155,12 @@ function MainLayout({ isAdmin, companyName }) {
           </div>
           <div className="flex items-center gap-4">
             {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest mr-2 shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
-            {/* 💡 헤더에 업체명(케어플러스 등)이 정상적으로 뜨도록 복구 */}
             <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border">
               <Building2 size={14} className="mr-2" /> {companyName}
             </span>
           </div>
         </header>
 
-        {/* 컨텐츠 영역 */}
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC] p-4 md:p-10 w-full">
           <div className="max-w-7xl mx-auto min-h-full pb-20">
             <Routes>
@@ -186,14 +179,13 @@ function MainLayout({ isAdmin, companyName }) {
   );
 }
 
-// 💡 2. 최상위 App 컴포넌트
+// 최상위 App 컴포넌트
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [companyName, setCompanyName] = useState(''); // 💡 유실되었던 상태 복구
+  const [companyName, setCompanyName] = useState(''); 
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
 
-  // 💡 관리자 체크 및 업체 정보(케어플러스) 동시 조회 기능
   const loadUserData = async (user) => {
     if (!user) {
       setIsAdmin(false);
@@ -227,12 +219,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 안전 장치: 통신이 끊겨도 무한 로딩 방지 (5초 타임아웃)
-    const safetyTimeout = setTimeout(() => {
-      console.warn("인증 체크 시간이 초과되어 강제로 로딩을 해제합니다.");
-      setIsCheckingAdmin(false);
-    }, 5000);
+    let isMounted = true;
 
+    // 💡 핵심 수정: 초기 로딩과 인증 리스너 충돌(Race Condition)을 원천 차단
     const initializeAuth = async () => {
       try {
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
@@ -240,45 +229,42 @@ export default function App() {
         
         if (initialSession) {
           setSession(initialSession);
+          // 관리자 권한 및 회사 정보 조회가 100% 끝날 때까지 대기 (무한루프/하얀화면 해결)
           await loadUserData(initialSession.user);
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        clearTimeout(safetyTimeout);
-        setIsCheckingAdmin(false); 
+        if (isMounted) setIsCheckingAdmin(false); 
       }
     };
 
     initializeAuth();
 
-    // 💡 핵심: 세션 만료 방지 및 자동 갱신(Auto-Refresh) 감지기 적용
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      if (!isMounted) return;
       
-      // 토큰 갱신(TOKEN_REFRESHED) 또는 로그인(SIGNED_IN) 시 세션 유지
+      // 이미 initializeAuth에서 최초 로드를 처리하므로 INITIAL_SESSION은 스킵
+      if (event === 'INITIAL_SESSION') return;
+
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setSession(currentSession);
         if (currentSession?.user) {
           await loadUserData(currentSession.user);
         }
-      } 
-      // 강제 로그아웃 또는 유저 삭제 시 정보 완전 초기화
-      else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setSession(null);
         setIsAdmin(false);
         setCompanyName('');
       }
-      
-      setIsCheckingAdmin(false);
     });
 
     return () => {
-      clearTimeout(safetyTimeout);
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  // 로딩 스피너 화면
   if (isCheckingAdmin) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FAFC]">
@@ -293,7 +279,6 @@ export default function App() {
       {!session ? (
         <AuthPage />
       ) : (
-        // 💡 인증된 사용자의 경우에만 SessionTimeoutHandler 적용
         <SessionTimeoutHandler>
           <MainLayout isAdmin={isAdmin} companyName={companyName} />
         </SessionTimeoutHandler>

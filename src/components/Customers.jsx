@@ -35,7 +35,7 @@ export default function Customers() {
     name: '', gender: '남', birth_date: '', local_gov_id: '',
     disability_type: '', disability_level: '심함', phone: '',
     zip_code: '', address: '', detail_address: '', signature: null,
-    qualification: '의료급여' // 💡 자격사항 기본값 추가
+    qualification: '의료급여'
   });
 
   const [grantData, setGrantData] = useState({
@@ -61,84 +61,88 @@ export default function Customers() {
   }, [searchTerm]);
 
   async function fetchData() {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
-    if (userError || !user) {
-      console.error("인증 에러:", userError);
-      return;
-    }
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.warn("인증 에러이거나 세션이 없습니다.");
+        return;
+      }
 
-    const { data: custData } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('company_id', user.id)
-      .order('created_at', { ascending: false });
-
-    const { data: govData } = await supabase.from('local_governments').select('id, name');
-    
-    const { data: prodData } = await supabase
-      .from('devices')
-      .select('*')
-      .eq('company_id', user.id);
-    
-    let claimsData = [];
-    if (custData && custData.length > 0) {
-      const customerIds = custData.map(c => c.id);
-      const { data: cData } = await supabase
-        .from('claims')
+      const { data: custData } = await supabase
+        .from('customers')
         .select('*')
         .eq('company_id', user.id)
-        .in('customer_id', customerIds) 
-        .order('claim_date', { ascending: false });
-      claimsData = cData || [];
-    }
+        .order('created_at', { ascending: false });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const merged = custData?.map(c => {
-      const customerClaims = claimsData?.filter(claim => claim.customer_id === c.id) || [];
-      const latestClaim = customerClaims[0];
+      const { data: govData } = await supabase.from('local_governments').select('id, name');
       
-      let device = null;
-      let remainingDays = Infinity;
-      let expireDate = null;
+      const { data: prodData } = await supabase
+        .from('devices')
+        .select('*')
+        .eq('company_id', user.id);
+      
+      let claimsData = [];
+      if (custData && custData.length > 0) {
+        const customerIds = custData.map(c => c.id);
+        const { data: cData } = await supabase
+          .from('claims')
+          .select('*')
+          .eq('company_id', user.id)
+          .in('customer_id', customerIds) 
+          .order('claim_date', { ascending: false });
+        claimsData = cData || [];
+      }
 
-      if (latestClaim) {
-        device = prodData?.find(d => d.id === latestClaim.product_id);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const merged = custData?.map(c => {
+        const customerClaims = claimsData?.filter(claim => claim.customer_id === c.id) || [];
+        const latestClaim = customerClaims[0];
         
-        if (device && device.lifespan) {
-          const lifespanYears = parseInt(device.lifespan, 10);
-          if (!isNaN(lifespanYears)) {
-            expireDate = new Date(latestClaim.claim_date);
-            expireDate.setFullYear(expireDate.getFullYear() + lifespanYears);
-            expireDate.setHours(0, 0, 0, 0);
+        let device = null;
+        let remainingDays = Infinity;
+        let expireDate = null;
 
-            const diffTime = expireDate.getTime() - today.getTime();
-            remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (latestClaim) {
+          device = prodData?.find(d => d.id === latestClaim.product_id);
+          
+          if (device && device.lifespan) {
+            const lifespanYears = parseInt(device.lifespan, 10);
+            if (!isNaN(lifespanYears)) {
+              expireDate = new Date(latestClaim.claim_date);
+              expireDate.setFullYear(expireDate.getFullYear() + lifespanYears);
+              expireDate.setHours(0, 0, 0, 0);
+
+              const diffTime = expireDate.getTime() - today.getTime();
+              remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            }
           }
         }
-      }
 
-      return {
-        ...c,
-        local_governments: govData?.find(g => g.id === c.local_gov_id),
-        latestClaim: latestClaim ? { ...latestClaim, device } : null,
-        remainingDays,
-        expireDate
-      };
-    });
+        return {
+          ...c,
+          local_governments: govData?.find(g => g.id === c.local_gov_id),
+          latestClaim: latestClaim ? { ...latestClaim, device } : null,
+          remainingDays,
+          expireDate
+        };
+      });
 
-    merged?.sort((a, b) => {
-      if (a.remainingDays !== b.remainingDays) {
-        return a.remainingDays - b.remainingDays; 
-      }
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
+      merged?.sort((a, b) => {
+        if (a.remainingDays !== b.remainingDays) {
+          return a.remainingDays - b.remainingDays; 
+        }
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
 
-    setCustomers(merged || []);
-    setGovs(govData || []);
-    setProducts(prodData || []);
+      setCustomers(merged || []);
+      setGovs(govData || []);
+      setProducts(prodData || []);
+    } catch (error) {
+      console.error("데이터 불러오기 실패:", error);
+    }
   }
 
   const processAiFile = async (file) => {
@@ -221,7 +225,6 @@ export default function Customers() {
           extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
         }
         
-        // AI가 추출한 자격사항이 유효하지 않을 경우 의료급여로 기본값 설정
         const validQualifications = ['건강보험', '의료급여', '경감(건강보험)'];
         if (!validQualifications.includes(extractedData.qualification)) {
           extractedData.qualification = '의료급여';
@@ -247,35 +250,37 @@ export default function Customers() {
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) processAiFile(file); };
 
   async function handleSave() {
-    if (!formData.name || !formData.local_gov_id) return alert('성함과 지자체는 필수입니다.');
+    if (!formData.name) return alert('성함은 필수입니다.');
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
-      return;
-    }
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+        return;
+      }
 
-    const { local_governments, latestClaim, remainingDays, expireDate, ...pureData } = formData;
-    
-    const payload = { 
-      ...pureData, 
-      local_gov_id: parseInt(formData.local_gov_id),
-      company_id: user.id 
-    };
-    
-    if (editingId) {
-      const { error } = await supabase.from('customers').update(payload).eq('id', editingId);
-      if (error) {
-        alert(error.message);
-      } else {
+      // 💡 오류의 핵심 원인 제거 (NaN이나 빈 문자열 방어)
+      const { local_governments, latestClaim, remainingDays, expireDate, ...pureData } = formData;
+      const parsedGovId = formData.local_gov_id ? parseInt(formData.local_gov_id) : null;
+      
+      const payload = { 
+        ...pureData, 
+        local_gov_id: parsedGovId,
+        birth_date: formData.birth_date || null,
+        company_id: user.id 
+      };
+      
+      if (editingId) {
+        const { error } = await supabase.from('customers').update(payload).eq('id', editingId);
+        if (error) throw error;
+        
         closeModal(); 
         fetchData(); 
-      }
-    } else {
-      const { data, error } = await supabase.from('customers').insert([payload]).select().single();
-      if (error) {
-        alert(error.message);
       } else {
+        // insert 후 select().single()로 가져오도록 유지
+        const { data, error } = await supabase.from('customers').insert([payload]).select().single();
+        if (error) throw error;
+        
         closeModal(); 
         await fetchData(); 
         
@@ -289,6 +294,8 @@ export default function Customers() {
           });
         }
       }
+    } catch (err) {
+      alert(`데이터 저장 실패:\n${err.message}`);
     }
   }
 
@@ -305,29 +312,37 @@ export default function Customers() {
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        alert('로그인 세션이 만료되었습니다.');
+        return;
+      }
 
-    const { error } = await supabase.from('claims').insert([{
-      customer_id: selectedCustomer.id,
-      product_id: grantData.product_id, 
-      carrier: grantData.carrier,
-      tracking_no: grantData.tracking_no,
-      status: '교부 완료',
-      claim_date: new Date().toISOString().split('T')[0],
-      total_amount: grantData.total_amount,
-      quantity: grantData.quantity,
-      company_id: user?.id 
-    }]);
-    
-    if (error) {
-      alert('❌ 교부 처리 중 DB 에러가 발생했습니다:\n\n' + error.message);
-      console.error(error);
-    } else {
+      // 💡 오류의 핵심 원인 제거 (수량, 금액을 확실한 숫자로 변환)
+      const { error } = await supabase.from('claims').insert([{
+        customer_id: selectedCustomer.id,
+        product_id: grantData.product_id, 
+        carrier: grantData.carrier,
+        tracking_no: grantData.tracking_no || null,
+        status: '교부 완료',
+        claim_date: new Date().toISOString().split('T')[0],
+        total_amount: parseInt(grantData.total_amount) || 0,
+        quantity: parseInt(grantData.quantity) || 1,
+        company_id: user.id 
+      }]);
+      
+      if (error) throw error;
+      
       alert('✅ 교부 처리가 완료되었습니다! 청구 관리 탭에서 확인해주세요.');
       setIsGrantModalOpen(false); 
       setGrantData({ product_id: '', product_name: '', category: '', carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false });
       setProductSearch('');
       fetchData();
+
+    } catch (error) {
+      alert(`❌ 교부 처리 중 DB 에러가 발생했습니다:\n\n${error.message}`);
+      console.error(error);
     }
   }
 
@@ -335,7 +350,7 @@ export default function Customers() {
     setFormData({ 
       ...c, 
       local_gov_id: c.local_gov_id?.toString() || '',
-      qualification: c.qualification || '의료급여' // 기존 데이터가 없을 시 기본값
+      qualification: c.qualification || '의료급여' 
     }); 
     setEditingId(c.id); setIsModalOpen(true);
     setTimeout(() => { 
@@ -652,7 +667,6 @@ export default function Customers() {
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">성별</label><div className="flex bg-gray-50 p-1 rounded-xl md:rounded-2xl">{['남', '여'].map(g => (<button key={g} onClick={() => setFormData({...formData, gender: g})} className={`flex-1 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all ${formData.gender === g ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>{g}</button>))}</div></div>
                 <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">생년월일</label><input type="date" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} /></div>
                 
-                {/* 💡 신규 추가된 자격사항 영역 */}
                 <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">자격사항</label>
                   <select 
@@ -825,7 +839,7 @@ export default function Customers() {
                     type="number"
                     className="w-full bg-blue-50/50 text-blue-600 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-black" 
                     value={grantData.total_amount} 
-                    onChange={(e) => setGrantData({...grantData, total_amount: parseInt(e.target.value) || 0})} 
+                    onChange={(e) => setGrantData({...grantData, total_amount: e.target.value})} 
                   />
                 </div>
               </div>
