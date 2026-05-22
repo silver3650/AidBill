@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
   Building2, User, Calendar, Lock, Mail, 
-  Upload, ArrowRight, CheckCircle2, Loader2, Award, X 
+  Upload, ArrowRight, CheckCircle2, Loader2, Award, X, FileText, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -13,7 +13,7 @@ const SUBSCRIPTION_PLANS = [
   { id: 'enterprise', name: '엔터프라이즈', price: '별도 협의', desc: '무제한 청구 및 맞춤형 커스텀 기능 제공. 보조기기 제조사 및 전국 단위 대형 업체에 적합합니다.' }
 ];
 
-// 💡 4. Supabase 에러 메시지 한국어 변환 헬퍼 함수
+// 💡 Supabase 에러 메시지 한국어 변환 헬퍼 함수
 const translateAuthError = (err) => {
   const msg = err.message || '';
   if (msg.includes("User already registered")) return "이미 가입된 이메일입니다. 로그인해 주세요.";
@@ -30,11 +30,40 @@ export default function AuthPage() {
 
   const [selectedPlanInfo, setSelectedPlanInfo] = useState(null);
 
+  // 💡 약관 동의 상태 및 모달 관리
+  const [agreements, setAgreements] = useState({ terms: false, privacy: false });
+  const [activeModal, setActiveModal] = useState(null); // 'terms' | 'privacy' | null
+  const [termsText, setTermsText] = useState('이용약관 내용을 불러오는 중...');
+  const [privacyText, setPrivacyText] = useState('개인정보 처리방침을 불러오는 중...');
+
   const [formData, setFormData] = useState({
     companyName: '', bizRegNumber: '', ownerName: '',
     ownerBirthDate: '', email: '', password: '', bizLicense: null,
     subscriptionPlan: 'free' // 기본 선택값을 '프리'로 설정
   });
+
+  // 💡 관리자 설정(app_settings)에서 이용약관/개인정보처리방침 내용 불러오기
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_settings')
+          .select('terms_of_service, privacy_policy')
+          .single(); // 설정 테이블은 단일 row로 관리한다고 가정
+        
+        if (data) {
+          if (data.terms_of_service) setTermsText(data.terms_of_service);
+          if (data.privacy_policy) setPrivacyText(data.privacy_policy);
+        }
+      } catch (err) {
+        // 테이블이 아직 없거나 에러 발생 시 기본 안내 문구 출력
+        console.warn("앱 설정 정보를 불러올 수 없습니다. 기본값을 사용합니다.");
+        setTermsText("관리자 페이지에서 '이용약관' 내용을 설정해 주세요.");
+        setPrivacyText("관리자 페이지에서 '개인정보 처리방침' 내용을 설정해 주세요.");
+      }
+    };
+    fetchSettings();
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -46,8 +75,17 @@ export default function AuthPage() {
     setSelectedPlanInfo(plan); // 모달 띄우기
   };
 
+  // 전체 필수 약관 동의 핸들러
+  const handleAllAgree = (e) => {
+    const isChecked = e.target.checked;
+    setAgreements({ terms: isChecked, privacy: isChecked });
+  };
+
   const handleSignUp = async () => {
     const { companyName, bizRegNumber, ownerName, ownerBirthDate, email, password, bizLicense, subscriptionPlan } = formData;
+    
+    // 💡 필수 값 검증
+    if (!agreements.terms || !agreements.privacy) return alert('이용약관 및 개인정보 처리방침에 모두 동의해 주세요.');
     if (!bizLicense) return alert('사업자등록증 파일을 반드시 첨부해 주세요.');
     
     setLoading(true);
@@ -60,7 +98,7 @@ export default function AuthPage() {
       if (!userId) throw new Error("계정 생성에 실패했습니다.");
 
       try {
-        // 💡 3. 파일 확장자 안전 추출 및 타임스탬프 결합 (고유 파일명 생성)
+        // 3. 파일 확장자 안전 추출 및 타임스탬프 결합 (고유 파일명 생성)
         const originalName = bizLicense.name;
         const lastDotIndex = originalName.lastIndexOf('.');
         const fileExt = lastDotIndex !== -1 ? originalName.substring(lastDotIndex + 1) : 'png';
@@ -73,7 +111,7 @@ export default function AuthPage() {
         
         if (uploadError) throw new Error(`파일 첨부 실패: ${uploadError.message}`);
 
-        // 💡 1. 익월 1일 과금 시작일 자동 계산
+        // 1. 익월 1일 과금 시작일 자동 계산
         const today = new Date();
         const nextMonthFirst = new Date(today.getFullYear(), today.getMonth() + 1, 1);
         const billingStartDate = `${nextMonthFirst.getFullYear()}-${String(nextMonthFirst.getMonth() + 1).padStart(2, '0')}-01`;
@@ -98,7 +136,7 @@ export default function AuthPage() {
         setIsLogin(true);
 
       } catch (postError) {
-        // 💡 2. 고아 데이터 발생 방지 및 명확한 안내 (클라이언트 롤백 대체)
+        // 2. 고아 데이터 발생 방지 및 명확한 안내 (클라이언트 롤백 대체)
         console.error("가입 후속 처리 오류:", postError);
         alert(`계정은 생성되었으나 추가 정보 저장 중 오류가 발생했습니다.\n번거로우시겠지만 관리자에게 문의해 주세요.\n(사유: ${postError.message})`);
         await supabase.auth.signOut(); // 비정상 상태이므로 강제 로그아웃 처리
@@ -154,6 +192,38 @@ export default function AuthPage() {
   return (
     <div className="min-h-[100dvh] bg-[#F8FAFC] flex items-center justify-center p-4 md:p-6 font-sans overflow-hidden relative">
       
+      {/* 💡 약관 및 개인정보 처리방침 모달 */}
+      {activeModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
+            <div className="bg-gray-50 border-b border-gray-100 p-5 flex items-center justify-between shrink-0">
+              <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                {activeModal === 'terms' ? <FileText size={20} className="text-blue-600"/> : <ShieldCheck size={20} className="text-blue-600"/>}
+                {activeModal === 'terms' ? '이용약관' : '개인정보 처리방침'}
+              </h3>
+              <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-700 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            {/* 스크롤 가능한 텍스트 영역 */}
+            <div className="p-6 overflow-y-auto custom-scrollbar whitespace-pre-wrap text-sm text-gray-600 leading-relaxed font-medium bg-white">
+              {activeModal === 'terms' ? termsText : privacyText}
+            </div>
+            <div className="p-5 border-t border-gray-100 bg-gray-50 shrink-0">
+              <button 
+                onClick={() => {
+                  setAgreements(prev => ({ ...prev, [activeModal]: true })); // 확인 시 자동 동의 체크
+                  setActiveModal(null);
+                }} 
+                className="w-full py-3 bg-blue-600 text-white rounded-xl font-black shadow-md hover:bg-blue-700 transition-colors"
+              >
+                확인 및 동의하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 요금제 상세 설명 팝업 모달 */}
       {selectedPlanInfo && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -276,8 +346,48 @@ export default function AuthPage() {
                     <span className="text-[11px] md:text-xs font-black">{formData.bizLicense ? formData.bizLicense.name : '사업자등록증 첨부 (필수)'}</span>
                   </button>
                 </div>
+
+                {/* 💡 이용약관 및 개인정보 동의 영역 */}
+                <div className="w-full mt-2 bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                  <label className="flex items-center gap-2 text-sm font-black text-gray-800 cursor-pointer mb-3 pb-3 border-b border-gray-100">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      checked={agreements.terms && agreements.privacy}
+                      onChange={handleAllAgree}
+                    />
+                    <span>전체 필수 약관에 동의합니다</span>
+                  </label>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-bold text-gray-600 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          checked={agreements.terms}
+                          onChange={(e) => setAgreements(prev => ({ ...prev, terms: e.target.checked }))}
+                        />
+                        <span>[필수] 이용약관 동의</span>
+                      </label>
+                      <button type="button" onClick={() => setActiveModal('terms')} className="text-[11px] text-gray-400 hover:text-blue-600 font-bold underline underline-offset-2">내용보기</button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-bold text-gray-600 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          checked={agreements.privacy}
+                          onChange={(e) => setAgreements(prev => ({ ...prev, privacy: e.target.checked }))}
+                        />
+                        <span>[필수] 개인정보 처리방침 동의</span>
+                      </label>
+                      <button type="button" onClick={() => setActiveModal('privacy')} className="text-[11px] text-gray-400 hover:text-blue-600 font-bold underline underline-offset-2">내용보기</button>
+                    </div>
+                  </div>
+                </div>
+
               </div>
-              <button onClick={handleSignUp} disabled={loading} className="w-full py-4 md:py-5 mt-2 bg-gray-900 text-white rounded-xl md:rounded-2xl font-black shadow-xl hover:bg-black hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70">
+              <button onClick={handleSignUp} disabled={loading} className="w-full py-4 md:py-5 mt-4 bg-gray-900 text-white rounded-xl md:rounded-2xl font-black shadow-xl hover:bg-black hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70">
                 {loading ? <Loader2 className="animate-spin mx-auto" /> : '회원가입 신청하기'}
               </button>
             </div>

@@ -217,7 +217,7 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="w-full overflow-x-auto custom-scrollbar pb-2">
-              <div className="h-60 md:h-72" style={{ minWidth: '600px' }}>
+              <div className="h-72" style={{ minWidth: '600px' }}>
                 <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                   <ComposedChart data={chartData} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
