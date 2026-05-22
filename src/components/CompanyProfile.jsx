@@ -1,27 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Building, MapPin, Image as ImageIcon, Save, 
-  Upload, CheckCircle, Search, FileText, Stamp, CreditCard, Clock
+  Upload, Clock, Search, FileText, Stamp, CreditCard, Plus, Trash2
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+
+const DOC_TYPES = [
+  '의료기기 판매업 신고증',
+  '의료기기 수리업 신고증',
+  '의지·보조기 제조·수리업 신고증'
+];
 
 export default function CompanyProfile() {
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
-    company_name: '',
-    business_number: '',
-    biz_type: '',
-    biz_item: '',
-    representative_name: '',
-    representative_birth: '',
-    contact_number: '',
-    email: '', 
-    zip_code: '',
-    address: '',
-    detail_address: '',
-    seal_image: null,
-    biz_reg_image: null,
-    bankbook_image: null
+    company_name: '', business_number: '', biz_type: '', biz_item: '',
+    representative_name: '', representative_birth: '', contact_number: '',
+    email: '', zip_code: '', address: '', detail_address: '',
+    // 💡 신규 추가된 계좌 정보 필드
+    bank_name: '', account_number: '', account_holder: '',
+    seal_image: null, biz_reg_image: null, bankbook_image: null,
+    qualifying_docs: [] 
   });
 
   useEffect(() => {
@@ -29,80 +28,111 @@ export default function CompanyProfile() {
     script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
     script.async = true;
     document.body.appendChild(script);
-    
     fetchCompanyData();
-
     return () => { document.body.removeChild(script); };
   }, []);
 
   async function fetchCompanyData() {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) return;
-
-    // 💡 로그인한 업체의 company_id와 일치하는 프로필을 조회
-    const { data } = await supabase
-      .from('company_profile')
-      .select('*')
-      .eq('company_id', user.id)
-      .single();
-      
-    if (data) {
-      setFormData(data);
-    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('company_profile').select('*').eq('company_id', user.id).maybeSingle();
+    if (data) setFormData({ ...data, qualifying_docs: data.qualifying_docs || [] });
   }
 
   const handleAddressSearch = () => {
     if (!window.daum || !window.daum.Postcode) return alert('주소 검색 서비스를 불러오는 중입니다.');
-    
     new window.daum.Postcode({
       oncomplete: function(data) {
-        setFormData(prev => ({
-          ...prev,
-          zip_code: data.zonecode,
-          address: data.address
-        }));
+        setFormData(prev => ({ ...prev, zip_code: data.zonecode, address: data.address }));
       }
     }).open();
   };
 
-  const handleImageUpload = (e, field) => {
-    const file = e.target.files[0];
-    if (file) {
+  const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, [field]: reader.result }));
-      };
       reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; 
+          let scaleSize = 1;
+          if (img.width > MAX_WIDTH) {
+            scaleSize = MAX_WIDTH / img.width;
+          }
+          canvas.width = img.width * scaleSize;
+          canvas.height = img.height * scaleSize;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        };
+        img.onerror = (err) => reject(err);
+      };
+    });
+  };
+
+  const handleImageUpload = async (e, field, index = null) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const compressedBase64 = await compressImage(file);
+
+      if (index !== null) {
+        setFormData(prev => {
+          const newDocs = [...prev.qualifying_docs];
+          newDocs[index] = { ...newDocs[index], image: compressedBase64 };
+          return { ...prev, qualifying_docs: newDocs };
+        });
+      } else {
+        setFormData(prev => ({ ...prev, [field]: compressedBase64 }));
+      }
+    } catch (err) {
+      alert('이미지 처리 중 오류가 발생했습니다.');
     }
+  };
+
+  const addQualifyingDoc = () => {
+    setFormData(prev => ({
+      ...prev,
+      qualifying_docs: [...prev.qualifying_docs, { type: DOC_TYPES[0], image: null }]
+    }));
+  };
+
+  const removeQualifyingDoc = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      qualifying_docs: prev.qualifying_docs.filter((_, i) => i !== index)
+    }));
   };
 
   async function handleSave() {
     setIsLoading(true);
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
-    if (userError || !user) {
-      alert('로그인 세션이 만료되었습니다.');
-      setIsLoading(false);
-      return;
-    }
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        alert('로그인 세션이 만료되었습니다.');
+        return;
+      }
 
-    // 💡 company_id를 항상 payload에 포함
-    const payload = { 
-      ...formData, 
-      company_id: user.id 
-    };
+      const payload = { ...formData, company_id: user.id };
 
-    // 💡 upsert를 사용하되, 기존 데이터가 있으면 업데이트, 없으면 생성
-    const { error } = await supabase
-      .from('company_profile')
-      .upsert(payload, { onConflict: 'company_id' });
-    
-    setIsLoading(false);
-    if (error) {
-      alert('저장 실패: ' + error.message);
-    } else {
+      const { error } = await supabase
+        .from('company_profile')
+        .upsert(payload, { onConflict: 'company_id' });
+      
+      if (error) throw error; 
+
       alert('업체 정보가 성공적으로 저장되었습니다.');
       fetchCompanyData();
+    } catch (error) {
+      console.error(error);
+      alert('저장 실패: 데이터 용량이 초과되었거나 서버 연결이 불안정합니다.\n' + (error.message || ''));
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -165,6 +195,28 @@ export default function CompanyProfile() {
             </div>
           </div>
 
+          {/* 💡 정산 계좌 정보 신규 추가 영역 */}
+          <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
+              <CreditCard className="text-blue-600" size={20} /> 정산 계좌 정보
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">금융기관(은행명)</label>
+                <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="예: 기업은행" value={formData.bank_name || ''} onChange={e => setFormData({...formData, bank_name: e.target.value})} />
+              </div>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">계좌번호</label>
+                <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="계좌번호 ( - 제외)" value={formData.account_number || ''} onChange={e => setFormData({...formData, account_number: e.target.value})} />
+              </div>
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">예금주</label>
+                <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="예금주명" value={formData.account_holder || ''} onChange={e => setFormData({...formData, account_holder: e.target.value})} />
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
             <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
               <MapPin className="text-blue-600" size={20} /> 사업장 주소
@@ -202,6 +254,59 @@ export default function CompanyProfile() {
               <ImageUploadBox title="사업자 등록증 사본" icon={<FileText size={24}/>} image={formData.biz_reg_image} onChange={(e) => handleImageUpload(e, 'biz_reg_image')} />
               <ImageUploadBox title="통장 사본" icon={<CreditCard size={24}/>} image={formData.bankbook_image} onChange={(e) => handleImageUpload(e, 'bankbook_image')} />
             </div>
+
+            <div className="pt-6 border-t border-gray-100">
+              <div className="flex justify-between items-center mb-4">
+                <label className="text-sm font-extrabold text-gray-800 ml-1 flex items-center gap-1.5">
+                  <FileText size={16} className="text-blue-600"/> 업체 자격 서류
+                </label>
+                <button 
+                  onClick={addQualifyingDoc} 
+                  className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 transition-colors"
+                >
+                  <Plus size={14}/> 서류 추가
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {formData.qualifying_docs.map((doc, index) => (
+                  <div key={index} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3 relative group transition-all">
+                    <div className="flex gap-2">
+                      <select 
+                        className="flex-1 bg-white p-3 rounded-xl border border-gray-200 outline-none font-bold text-xs md:text-sm text-gray-700 focus:ring-2 focus:ring-blue-600 transition-all"
+                        value={doc.type}
+                        onChange={(e) => {
+                          const newDocs = [...formData.qualifying_docs];
+                          newDocs[index] = { ...newDocs[index], type: e.target.value };
+                          setFormData({ ...formData, qualifying_docs: newDocs });
+                        }}
+                      >
+                        {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <button 
+                        onClick={() => removeQualifyingDoc(index)} 
+                        className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all shrink-0"
+                        title="서류 삭제"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+
+                    <DynamicImageUploadBox 
+                      image={doc.image} 
+                      onChange={(e) => handleImageUpload(e, null, index)} 
+                      id={`doc-file-${index}`}
+                    />
+                  </div>
+                ))}
+                
+                {formData.qualifying_docs.length === 0 && (
+                  <div className="text-center py-6 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <p className="text-xs font-bold text-gray-400">등록된 자격 서류가 없습니다.</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -230,6 +335,29 @@ function ImageUploadBox({ title, icon, image, onChange }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function DynamicImageUploadBox({ image, onChange, id }) {
+  return (
+    <div 
+      onClick={() => document.getElementById(id).click()} 
+      className={`relative w-full h-24 md:h-32 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-all overflow-hidden group ${image ? 'border-blue-200 bg-white' : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-blue-400'}`}
+    >
+      <input type="file" id={id} accept="image/*" className="hidden" onChange={onChange} />
+      {image ? (
+        <>
+          <img src={image} alt="자격 서류" className="w-full h-full object-contain p-1" />
+          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+            <span className="text-white font-black text-xs flex items-center gap-1"><Upload size={14}/> 이미지 변경</span>
+          </div>
+        </>
+      ) : (
+        <span className="text-xs font-bold text-gray-400 flex items-center gap-1 group-hover:text-blue-500">
+          <Upload size={14}/> 이미지 업로드
+        </span>
+      )}
     </div>
   );
 }

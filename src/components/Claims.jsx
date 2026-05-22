@@ -15,14 +15,14 @@ import ReceiptDoc from '../components/documents/ReceiptDoc';
 import EstimateDoc from '../components/documents/EstimateDoc';
 import TransactionDoc from '../components/documents/TransactionDoc';
 
-const ImageOnlyDoc = ({ title, src }) => (
+const ImageOnlyDoc = ({ title, src, emptyMessage }) => (
   <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col items-center justify-start text-slate-900 box-border overflow-hidden relative">
     <h2 className="text-2xl font-black mb-10 tracking-widest">{title}</h2>
     {src ? (
       <img src={src} alt={title} className="max-w-full max-h-[220mm] object-contain border border-gray-200 p-2 shadow-sm" />
     ) : (
-      <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[200mm] flex items-center justify-center bg-gray-50 rounded-2xl">
-        {title} 이미지가 등록되지 않았습니다. (환경설정 &gt; 회사 프로필에서 등록)
+      <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[200mm] flex items-center justify-center bg-gray-50 rounded-2xl p-10 text-center break-keep">
+        {emptyMessage || `${title} 이미지가 등록되지 않았습니다.`}
       </div>
     )}
   </div>
@@ -69,15 +69,28 @@ export default function Claims() {
   const [companyInfo, setCompanyInfo] = useState({
     company_name: '', representative_name: '', representative_birth: '',
     address: '', detail_address: '', zip_code: '', email: '', contact_number: '',
-    seal_image: null, biz_reg_image: null, bankbook_image: null 
+    seal_image: null, biz_reg_image: null, bankbook_image: null,
+    qualifying_docs: [] 
   });
 
   const pdfContainerRef = useRef(null);
 
-  const standardDocs = [
+  // 💡 대상자 자격 구분에 따른 필요 서류 목록 분리
+  const LOCAL_GOV_DOCS = [
     '교부비용청구서', '교부확인서', '사업자등록증', '계좌사본', 
     '물품인수증', '견적서', '거래명세서', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
   ];
+
+  const NHIS_DOCS = [
+    '보조기기 급여 지급청구서', '검수확인서', '위임장', 
+    '신분증 또는 복지카드 사본', '교부 사진 (기기/바코드)', '증빙서류 (세금계산서 등)', '업체 자격 서류 (신고증 등)'
+  ];
+
+  const getDocsListForClaim = (claim) => {
+    const qual = claim?.customers?.qualification;
+    if (qual === '건강보험' || qual === '경감(건강보험)') return NHIS_DOCS;
+    return LOCAL_GOV_DOCS;
+  };
 
   const documentComponents = {
     '교부비용청구서': ClaimFormDoc, '교부확인서': ConfirmationDoc, 
@@ -140,7 +153,12 @@ export default function Claims() {
       if (fallbackData) data = fallbackData;
     }
     
-    if (data) setCompanyInfo(data); 
+    if (data) {
+      setCompanyInfo({
+        ...data,
+        qualifying_docs: data.qualifying_docs || []
+      }); 
+    }
   }
 
   async function fetchData(userId) {
@@ -300,12 +318,17 @@ export default function Claims() {
       return;
     }
 
+    // 대상자의 자격 정보 확인하여 청구 타입 설정
+    const selectedCustomer = allCustomers.find(c => String(c.id) === String(newData.customer_id));
+    const isNHIS = selectedCustomer && (selectedCustomer.qualification === '건강보험' || selectedCustomer.qualification === '경감(건강보험)');
+
     const { error } = await supabase.from('claims').insert([{
       customer_id: newData.customer_id, 
       product_id: newData.product_id,
       claim_date: newData.claim_date, 
       total_amount: parseInt(newData.total_amount) || 0, 
       status: '대기 중',
+      claim_type: isNHIS ? '공단' : '지자체',
       company_id: user.id
     }]);
 
@@ -404,7 +427,6 @@ export default function Claims() {
       status: newStatus,
       carrier: editData.carrier,
       tracking_no: editData.tracking_no,
-      // 💡 핵심 수정: 배열을 JSON 문자열로 직렬화하여 Supabase 텍스트 컬럼 충돌 방지
       receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
       notes: editData.notes || ''
     };
@@ -449,17 +471,21 @@ export default function Claims() {
   };
 
   const getInitialFilesFromGov = (claim) => {
+    const qual = claim?.customers?.qualification;
+    const isNHIS = qual === '건강보험' || qual === '경감(건강보험)';
     const initialFiles = {};
+
+    if (isNHIS) {
+      NHIS_DOCS.forEach(doc => initialFiles[doc] = true);
+      return initialFiles;
+    }
+
+    // 기존 지자체 처리 로직
     const gov = claim?.customers?.local_governments;
-    
     const legacyMap = {
-      'cost_claim': '교부비용청구서',
-      'delivery_confirm': '교부확인서',
-      'biz_reg': '사업자등록증',
-      'bankbook': '계좌사본',
-      'receipt': '물품인수증',
-      'estimate': '견적서',
-      'invoice': '거래명세서',
+      'cost_claim': '교부비용청구서', 'delivery_confirm': '교부확인서',
+      'biz_reg': '사업자등록증', 'bankbook': '계좌사본',
+      'receipt': '물품인수증', 'estimate': '견적서', 'invoice': '거래명세서',
       'customer_id_card': '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
     };
 
@@ -468,11 +494,7 @@ export default function Claims() {
 
     if (rawDocs) {
       if (typeof rawDocs === 'string') {
-        try { 
-          reqDocs = JSON.parse(rawDocs); 
-        } catch(e) { 
-          reqDocs = rawDocs.split(',').map(s => s.trim()); 
-        }
+        try { reqDocs = JSON.parse(rawDocs); } catch(e) { reqDocs = rawDocs.split(',').map(s => s.trim()); }
       } else if (Array.isArray(rawDocs)) {
         reqDocs = rawDocs;
       }
@@ -480,7 +502,7 @@ export default function Claims() {
 
     const normalizedReqDocs = reqDocs.map(doc => legacyMap[doc] || doc);
 
-    standardDocs.forEach(docName => {
+    LOCAL_GOV_DOCS.forEach(docName => {
       if (normalizedReqDocs && normalizedReqDocs.length > 0) {
         initialFiles[docName] = normalizedReqDocs.includes(docName);
       } else {
@@ -564,7 +586,9 @@ export default function Claims() {
   const handleSendRealEmail = async () => {
     const emailMatch = emailData.recipient.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/);
     if (!emailMatch) { alert('올바른 수신 메일을 입력해 주세요.'); return; }
-    const selectedDocuments = standardDocs.filter(docName => emailData.files[docName]);
+    
+    const docsList = getDocsListForClaim(selectedClaim);
+    const selectedDocuments = docsList.filter(docName => emailData.files[docName]);
 
     if (window.confirm(`선택 서류 ${selectedDocuments.length}건을 PDF로 변환 및 발송하시겠습니까?`)) {
       setIsSendingEmail(true);
@@ -591,7 +615,6 @@ export default function Claims() {
           }
         }
         
-        // 💡 핵심 수정: 에지 함수 호출 오류 상세 캐치
         const { error: invokeError } = await supabase.functions.invoke('send-claim-email', {
           body: { 
             to: emailMatch[1], 
@@ -608,7 +631,6 @@ export default function Claims() {
           throw new Error(invokeError.message || '이메일 발송 서버 응답 오류');
         }
         
-        // 💡 핵심 수정: 메일 발송 성공 후 DB 상태 변경 시 발생하는 에러 철저히 방어
         const updateRes = await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
         if (updateRes.error) {
           throw new Error(`상태 업데이트 실패: ${updateRes.error.message}`);
@@ -633,51 +655,83 @@ export default function Claims() {
     
     const adjustedClaimData = {
       ...claimData,
-      issue_date: issueDate,
-      issueDate: issueDate,
-      written_date: issueDate,
-      writtenDate: issueDate,
-      write_date: issueDate,
-      writeDate: issueDate,
-      doc_date: issueDate,
-      docDate: issueDate,
-      publish_date: issueDate,
-      publishDate: issueDate,
-      confirm_date: issueDate,
-      confirmDate: issueDate,
-      confirmation_date: issueDate,
-      confirmationDate: issueDate,
-      signing_date: issueDate,
-      signingDate: issueDate,
-      signature_date: issueDate,
-      signatureDate: issueDate,
-      print_date: issueDate,
-      printDate: issueDate,
-      today_date: issueDate,
-      todayDate: issueDate,
-      current_date: issueDate,
-      currentDate: issueDate,
-      date: issueDate
+      issue_date: issueDate, issueDate: issueDate, written_date: issueDate, writtenDate: issueDate,
+      write_date: issueDate, writeDate: issueDate, doc_date: issueDate, docDate: issueDate,
+      publish_date: issueDate, publishDate: issueDate, confirm_date: issueDate, confirmDate: issueDate,
+      confirmation_date: issueDate, confirmationDate: issueDate, signing_date: issueDate, signingDate: issueDate,
+      signature_date: issueDate, signatureDate: issueDate, print_date: issueDate, printDate: issueDate,
+      today_date: issueDate, todayDate: issueDate, current_date: issueDate, currentDate: issueDate, date: issueDate
     };
 
     if (fileName === '교부비용청구서' || fileName === '거래명세서') {
       adjustedClaimData.claim_date = issueDate;
-    } else if (fileName === '교부확인서') {
-      adjustedClaimData.claim_date = claimData.claim_date; 
     } else {
       adjustedClaimData.claim_date = claimData.claim_date;
     }
 
     if (TargetDoc) {
       return <TargetDoc data={adjustedClaimData} company={companyInfo} />;
-    } else if (fileName === '사업자등록증') {
+    } 
+    
+    // 💡 서류 매핑 처리 (지자체 + 공단)
+    if (fileName === '사업자등록증') {
       return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
     } else if (fileName === '계좌사본') {
       return <ImageOnlyDoc title="통장 사본 (계좌 사본)" src={companyInfo.bankbook_image} />;
-    } else if (fileName === '기타 첨부(교부사진, 배송추적 캡쳐본 등)') {
+    } else if (fileName === '업체 자격 서류 (신고증 등)') {
+      // 💡 CompanyProfile에서 동적으로 등록한 qualifying_docs 렌더링
       return (
         <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
-          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">기타 첨부 자료</h2>
+          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">업체 자격 서류</h2>
+          <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
+            {companyInfo.qualifying_docs && companyInfo.qualifying_docs.length > 0 ? (
+              companyInfo.qualifying_docs.map((doc, i) => (
+                <div key={i} className="flex flex-col items-center">
+                   <span className="text-sm font-bold text-gray-500 mb-2">{doc.type}</span>
+                   {doc.image && <img src={doc.image} className="max-w-full max-h-[100mm] object-contain border p-2 shadow-sm" alt={doc.type}/>}
+                </div>
+              ))
+            ) : (
+              <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">
+                등록된 업체 자격 서류가 없습니다. (환경설정 &gt; 회사 프로필에서 등록)
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    } else if (fileName === '신분증 또는 복지카드 사본') {
+      return (
+        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
+          <h2 className="text-2xl font-black mb-4 text-center tracking-widest">신분증 사본</h2>
+          <p className="text-center text-rose-500 font-bold text-sm mb-10">* 대상자의 개인정보(주민등록번호 뒷자리)가 안전하게 마스킹 처리되어야 합니다.</p>
+          <div className="flex-1 border-2 border-dashed border-gray-300 w-full flex items-center justify-center bg-gray-50 rounded-2xl text-gray-400 font-bold">
+            신분증 또는 복지카드 사본 첨부 영역 (대상자 관리에서 스캔된 이미지 적용 예정)
+          </div>
+        </div>
+      );
+    } else if (fileName === '보조기기 급여 지급청구서' || fileName === '검수확인서' || fileName === '위임장') {
+      return (
+        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
+          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">{fileName}</h2>
+          <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden text-gray-400 font-bold bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+            해당 공단용 서식 템플릿 컴포넌트가 아직 연결되지 않았습니다.<br/>
+            (추후 NHIS 전용 문서 양식 업데이트 예정)
+          </div>
+        </div>
+      );
+    } else if (fileName === '증빙서류 (세금계산서 등)') {
+      return (
+        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
+          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">증빙서류 (세금계산서/카드전표 등)</h2>
+          <div className="flex-1 border-2 border-dashed border-gray-300 w-full flex items-center justify-center bg-gray-50 rounded-2xl text-gray-400 font-bold">
+            외부 정산 시스템(홈택스 등)에서 발행한 증빙 서류를 별도 첨부해 주세요.
+          </div>
+        </div>
+      );
+    } else if (fileName.includes('기타 첨부') || fileName.includes('교부 사진')) {
+      return (
+        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
+          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">{fileName.includes('교부 사진') ? '교부 사진 (기기전체 및 바코드)' : '기타 첨부 자료'}</h2>
           <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
             {adjustedClaimData?.receipt_photos && adjustedClaimData.receipt_photos.length > 0 ? (
               adjustedClaimData.receipt_photos.map((src, i) => (
@@ -688,7 +742,7 @@ export default function Claims() {
               ))
             ) : (
               <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">
-                등록된 기타 첨부 사진이 없습니다.
+                등록된 사진이 없습니다. (청구 관리 &gt; 수정 모달에서 등록)
               </div>
             )}
           </div>
@@ -846,64 +900,15 @@ export default function Claims() {
     <>
       <style type="text/css">
         {`
-          .print-page-area {
-            display: none;
-          }
-
+          .print-page-area { display: none; }
           @media print {
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            
-            .print-hide-ui {
-              display: none !important;
-            }
-
-            .print-page-area {
-              display: block !important;
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 210mm !important;
-              margin: 0 auto !important;
-              background: white !important;
-              z-index: 99999 !important;
-            }
-
-            .print-page-break {
-              page-break-after: always !important;
-              page-break-inside: avoid !important;
-              width: 210mm !important;
-              height: 296mm !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              overflow: hidden !important;
-              box-sizing: border-box !important;
-            }
-
-            .print-page-break > div {
-              width: 100% !important;
-              height: 100% !important;
-              max-width: none !important;
-              min-height: auto !important;
-              margin: 0 !important;
-            }
-
-            .print-page-break:last-child {
-              page-break-after: auto !important;
-            }
-
-            @page {
-              size: A4 portrait;
-              margin: 0 !important;
-            }
+            html, body { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .print-hide-ui { display: none !important; }
+            .print-page-area { display: block !important; position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; margin: 0 auto !important; background: white !important; z-index: 99999 !important; }
+            .print-page-break { page-break-after: always !important; page-break-inside: avoid !important; width: 210mm !important; height: 296mm !important; margin: 0 auto !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; overflow: hidden !important; box-sizing: border-box !important; }
+            .print-page-break > div { width: 100% !important; height: 100% !important; max-width: none !important; min-height: auto !important; margin: 0 !important; }
+            .print-page-break:last-child { page-break-after: auto !important; }
+            @page { size: A4 portrait; margin: 0 !important; }
           }
         `}
       </style>
@@ -1017,7 +1022,7 @@ export default function Claims() {
               <tr>
                 <th className="py-3 px-4 w-[5%] text-center">No.</th>
                 <th className="py-3 px-4 w-[10%]">접수일</th>
-                <th className="py-3 px-5 w-[15%]">대상자 / 지자체</th>
+                <th className="py-3 px-5 w-[15%]">대상자 / 기관</th>
                 <th className="py-3 px-5 w-[20%]">할당 품목</th>
                 <th className="py-3 px-4 text-right">청구금액</th>
                 <th className="py-3 px-4">입금일</th>
@@ -1030,6 +1035,8 @@ export default function Claims() {
                 const s = claim.status;
                 const serialNumber = filteredClaims.length - (indexOfFirstItem + index);
                 const isProductMissing = !claim.product_id || claim.products?.name === '품목 미지정';
+                const qual = claim.customers?.qualification;
+                const isNHIS = qual === '건강보험' || qual === '경감(건강보험)';
                 
                 return (
                   <tr key={claim.id} className="hover:bg-indigo-50/30 transition-colors group">
@@ -1041,7 +1048,10 @@ export default function Claims() {
                     </td>
                     <td className="py-3 px-5 align-middle">
                       <div className="font-black text-gray-900">{claim.customers?.name}</div>
-                      <div className="text-[10px] text-gray-500 font-bold truncate mt-0.5">{claim.customers?.local_governments?.name || '지자체 미정'}</div>
+                      <div className="text-[10px] font-bold truncate mt-0.5 flex gap-1">
+                        <span className="bg-blue-50 text-blue-600 px-1.5 py-[1px] rounded">{isNHIS ? '공단청구' : '지자체'}</span>
+                        <span className="text-gray-500">{claim.customers?.local_governments?.name || '미정'}</span>
+                      </div>
                       {claim.notes && (
                         <div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help">
                           <FileText size={10} /> 특이사항 있음
@@ -1376,7 +1386,7 @@ export default function Claims() {
                     <div className="md:col-span-2 p-5 md:p-6 bg-gray-50 flex flex-col border-t md:border-t-0">
                       <div className="mb-4 text-xs text-blue-600 uppercase font-black">첨부 서류 선택</div>
                       <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
-                        {standardDocs.map(docName => {
+                        {getDocsListForClaim(selectedClaim).map(docName => {
                           const isChecked = emailData.files[docName];
                           return (
                             <button key={docName} onClick={() => setEmailData({...emailData, files: {...emailData.files, [docName]: !isChecked}})} className={`w-full p-3 rounded-lg border flex justify-between items-center text-xs transition-all ${isChecked ? 'bg-white border-blue-400 text-blue-700 shadow-sm' : 'bg-transparent border-gray-200 text-gray-400'}`}>
@@ -1390,7 +1400,7 @@ export default function Claims() {
                 ) : (
                   <div className="p-4 md:p-6 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
-                      {standardDocs.filter(docName => emailData.files[docName]).map((fileName, idx) => (
+                      {getDocsListForClaim(selectedClaim).filter(docName => emailData.files[docName]).map((fileName, idx) => (
                         <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
                           {renderDocument(fileName, selectedClaim)}
                         </div>
@@ -1435,7 +1445,7 @@ export default function Claims() {
                          <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl outline-none text-sm font-bold border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                        </div>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-                         {standardDocs.map((docName) => {
+                         {getDocsListForClaim(selectedClaim).map((docName) => {
                            const isChecked = printFiles[docName];
                            return (
                              <button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}>
@@ -1449,7 +1459,7 @@ export default function Claims() {
                 ) : (
                   <div className="p-4 md:p-8 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
-                      {standardDocs.filter(docName => printFiles[docName]).map((fileName, idx) => (
+                      {getDocsListForClaim(selectedClaim).filter(docName => printFiles[docName]).map((fileName, idx) => (
                         <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
                           {renderDocument(fileName, selectedClaim)}
                         </div>
@@ -1488,7 +1498,7 @@ export default function Claims() {
 
       {isPrintDocPreview && selectedClaim && (
         <div className="print-page-area">
-          {standardDocs.filter(docName => printFiles[docName]).map((fileName, idx) => (
+          {getDocsListForClaim(selectedClaim).filter(docName => printFiles[docName]).map((fileName, idx) => (
             <div key={idx} className="print-page-break">
               {renderDocument(fileName, selectedClaim)}
             </div>
