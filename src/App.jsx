@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2 
@@ -8,6 +8,7 @@ import { supabase } from './supabaseClient';
 // 컴포넌트 임포트
 import Dashboard from './components/Dashboard';
 import LocalGovernments from './components/LocalGovernments';
+import NHISBranches from './components/NHISBranches';
 import Customers from './components/Customers';
 import Devices from './components/Devices';
 import Claims from './components/Claims';
@@ -17,43 +18,84 @@ import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
 
-// 💡 세션 만료 감지 컴포넌트
+// -------------------------------------------------------------
+// 🚀 핵심 해결 로직 1: 백그라운드 탭 절전 모드를 우회하는 강력한 세션 타이머
+// -------------------------------------------------------------
 function SessionTimeoutHandler({ children }) {
-  const timeoutRef = useRef(null);
-  const TIMEOUT_DURATION = 30 * 60 * 1000; // 30분을 밀리초로 설정
+  const TIMEOUT_DURATION = 30 * 60 * 1000; // 정확히 30분 (밀리초)
+  const lastWriteRef = useRef(0);
 
   const handleLogout = useCallback(async () => {
-    alert('30분 동안 활동이 없어 안전을 위해 자동 로그아웃되었습니다.');
+    // 중복 로그아웃 방지 플래그 (세션 스토리지 사용으로 탭 간 충돌 방지)
+    if (sessionStorage.getItem('isLoggingOut') === 'true') return;
+    sessionStorage.setItem('isLoggingOut', 'true');
+    
     try {
       await supabase.auth.signOut();
     } catch (e) {
       console.error('자동 로그아웃 에러:', e);
     } finally {
-      // 잔여 좀비 세션으로 인한 데이터 증발 버그를 막기 위해 강제 새로고침
+      // 잔여 데이터 초기화 및 로그인 페이지로 강제 리다이렉트
+      localStorage.removeItem('lastActivityTime');
+      sessionStorage.removeItem('isLoggingOut');
+      alert('30분 동안 활동이 없어 안전을 위해 자동 로그아웃되었습니다.');
       window.location.replace('/'); 
     }
   }, []);
 
-  const resetTimer = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(handleLogout, TIMEOUT_DURATION);
+  const updateActivity = useCallback(() => {
+    const now = Date.now();
+    // 💡 브라우저 과부하 방지: 마우스를 움직일 때마다 저장하지 않고 2초에 한 번만 저장
+    if (now - lastWriteRef.current > 2000) {
+      localStorage.setItem('lastActivityTime', now.toString());
+      lastWriteRef.current = now;
+    }
+  }, []);
+
+  const checkTimeout = useCallback(() => {
+    const lastActivityStr = localStorage.getItem('lastActivityTime');
+    if (!lastActivityStr) return;
+
+    const lastActivity = parseInt(lastActivityStr, 10);
+    // 기록된 마지막 시간과 현재 시간을 비교하여 30분이 넘었으면 즉시 로그아웃
+    if (Date.now() - lastActivity > TIMEOUT_DURATION) {
+      handleLogout();
+    }
   }, [handleLogout, TIMEOUT_DURATION]);
 
   useEffect(() => {
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    const activityHandler = () => resetTimer();
+    updateActivity(); // 첫 렌더링 시 활동 시간 갱신
 
-    events.forEach(event => document.addEventListener(event, activityHandler));
-    resetTimer();
+    // 1. 최소한의 방어 장치로 30초마다 체크
+    const intervalId = setInterval(checkTimeout, 30000);
 
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      events.forEach(event => document.removeEventListener(event, activityHandler));
+    // 2. 사용자가 다른 사이트나 앱을 보다가 다시 탭으로 돌아왔을 때의 처리
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkTimeout(); // 30분이 넘었는지 먼저 체크
+        updateActivity(); // 안 넘었다면 돌아온 행위 자체를 '활동'으로 간주하여 연장
+      }
     };
-  }, [resetTimer]);
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    // 3. 실제 사용자 활동 감지 이벤트 등록 (passive 옵션으로 성능 최적화)
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach(event => document.addEventListener(event, updateActivity, { passive: true }));
+
+    // 클린업 함수
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+      events.forEach(event => document.removeEventListener(event, updateActivity));
+    };
+  }, [checkTimeout, updateActivity]);
 
   return <>{children}</>;
 }
+// -------------------------------------------------------------
 
 // 내부 레이아웃 컴포넌트
 function MainLayout({ isAdmin, companyName }) {
@@ -68,6 +110,7 @@ function MainLayout({ isAdmin, companyName }) {
     { id: 'customers', path: '/customers', text: '대상자 관리', icon: <Users size={22} /> },
     { id: 'devices', path: '/devices', text: '보조기기 품목', icon: <Package size={22} /> },
     { id: 'localGovs', path: '/localGovs', text: '지자체 관리', icon: <Landmark size={22} /> },
+    { id: 'nhis', path: '/nhis', text: '공단지사 관리', icon: <Building2 size={22} /> },
     { id: 'company', path: '/company', text: '업체 정보', icon: <Building size={22} /> },
   ];
 
@@ -169,6 +212,7 @@ function MainLayout({ isAdmin, companyName }) {
               <Route path="/customers" element={<Customers />} />
               <Route path="/devices" element={<Devices />} />
               <Route path="/localGovs" element={<LocalGovernments />} />
+              <Route path="/nhis" element={<NHISBranches />} />
               <Route path="/company" element={<CompanyProfile />} />
               <Route path="/admin" element={isAdmin ? <AdminDashboard /> : <Navigate to="/" replace />} />
             </Routes>
@@ -234,19 +278,14 @@ export default function App() {
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        // 💡 핵심 수정 1: isMounted 조건 제거. 
-        // React 18의 Strict Mode에서 마운트/언마운트 반복 시 상태가 어긋나 무한 스피너가 도는 현상을 방지합니다.
         setIsCheckingAdmin(false); 
       }
     };
 
     initializeAuth();
 
-    // 💡 핵심 수정 2: 구독 해제 시 에러 방지를 위해 객체 파괴 구조 할당을 안전하게 처리합니다.
     const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!isMounted) return;
-      
-      // 이미 initializeAuth에서 최초 로드를 처리하므로 스킵
       if (event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
@@ -254,14 +293,23 @@ export default function App() {
         if (currentSession?.user) {
           await loadUserData(currentSession.user);
         }
-      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-        setSession(null);
-        setIsAdmin(false);
-        setCompanyName('');
+      } else if (event === 'SIGNED_OUT') {
+        // -------------------------------------------------------------
+        // 🚀 핵심 해결 로직 2: 가짜 로그아웃 방어 (더블 체크 로직)
+        // -------------------------------------------------------------
+        // 탭 이동 복귀 시 브라우저 절전 모드로 인해 Supabase 통신이 끊겨 
+        // 억울하게 SIGNED_OUT 이벤트가 발생하는 버그를 차단합니다.
+        const { data } = await supabase.auth.getSession();
+        
+        // 실제로 세션 데이터가 완전히 지워진(진짜 로그아웃) 경우에만 상태 초기화
+        if (!data.session) {
+          setSession(null);
+          setIsAdmin(false);
+          setCompanyName('');
+        }
       }
     });
 
-    // 💡 핵심 수정 3: 네트워크 지연 등으로 인한 무한 스피너 방지용 안전장치 (5초 후 무조건 해제)
     const timeoutId = setTimeout(() => {
       setIsCheckingAdmin(false);
     }, 5000);

@@ -11,6 +11,7 @@ export default function Customers() {
   const navigate = useNavigate(); 
   const [customers, setCustomers] = useState([]);
   const [govs, setGovs] = useState([]);
+  const [nhisBranches, setNhisBranches] = useState([]);
   const [products, setProducts] = useState([]); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGrantModalOpen, setIsGrantModalOpen] = useState(false); 
@@ -22,6 +23,9 @@ export default function Customers() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
 
+  // 💡 1차 지역 필터 (모달 내)
+  const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useState('');
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
@@ -32,7 +36,7 @@ export default function Customers() {
   ];
 
   const [formData, setFormData] = useState({
-    name: '', gender: '남', birth_date: '', local_gov_id: '',
+    name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '',
     disability_type: '', disability_level: '심함', phone: '',
     zip_code: '', address: '', detail_address: '', signature: null,
     qualification: '의료급여'
@@ -46,6 +50,9 @@ export default function Customers() {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const fileInputRef = useRef(null); 
+
+  // 💡 지사명에서 "국민건강보험공단" 제거 함수
+  const cleanBranchName = (name) => name ? name.replace(/국민건강보험공단 ?/g, '') : '';
 
   useEffect(() => {
     fetchData();
@@ -76,6 +83,7 @@ export default function Customers() {
         .order('created_at', { ascending: false });
 
       const { data: govData } = await supabase.from('local_governments').select('id, name');
+      const { data: nhisData } = await supabase.from('nhis_branches').select('id, name, region');
       
       const { data: prodData } = await supabase
         .from('devices')
@@ -96,6 +104,10 @@ export default function Customers() {
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+
+      // 데이터를 가나다순으로 미리 정렬
+      const sortedGovs = (govData || []).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+      const sortedNhis = (nhisData || []).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
 
       const merged = custData?.map(c => {
         const customerClaims = claimsData?.filter(claim => claim.customer_id === c.id) || [];
@@ -123,7 +135,8 @@ export default function Customers() {
 
         return {
           ...c,
-          local_governments: govData?.find(g => g.id === c.local_gov_id),
+          local_governments: sortedGovs?.find(g => g.id === c.local_gov_id),
+          nhis_branches: sortedNhis?.find(n => String(n.id) === String(c.nhis_branch_id)),
           latestClaim: latestClaim ? { ...latestClaim, device } : null,
           remainingDays,
           expireDate
@@ -138,7 +151,8 @@ export default function Customers() {
       });
 
       setCustomers(merged || []);
-      setGovs(govData || []);
+      setGovs(sortedGovs); 
+      setNhisBranches(sortedNhis); 
       setProducts(prodData || []);
     } catch (error) {
       console.error("데이터 불러오기 실패:", error);
@@ -259,13 +273,16 @@ export default function Customers() {
         return;
       }
 
-      // 💡 오류의 핵심 원인 제거 (NaN이나 빈 문자열 방어)
-      const { local_governments, latestClaim, remainingDays, expireDate, ...pureData } = formData;
-      const parsedGovId = formData.local_gov_id ? parseInt(formData.local_gov_id) : null;
+      const { local_governments, nhis_branches, latestClaim, remainingDays, expireDate, ...pureData } = formData;
+      const isHealthInsurance = formData.qualification === '건강보험' || formData.qualification === '경감(건강보험)';
+      
+      const parsedGovId = (!isHealthInsurance && formData.local_gov_id) ? parseInt(formData.local_gov_id) : null;
+      const parsedNhisId = (isHealthInsurance && formData.nhis_branch_id) ? formData.nhis_branch_id : null;
       
       const payload = { 
         ...pureData, 
         local_gov_id: parsedGovId,
+        nhis_branch_id: parsedNhisId,
         birth_date: formData.birth_date || null,
         company_id: user.id 
       };
@@ -277,7 +294,6 @@ export default function Customers() {
         closeModal(); 
         fetchData(); 
       } else {
-        // insert 후 select().single()로 가져오도록 유지
         const { data, error } = await supabase.from('customers').insert([payload]).select().single();
         if (error) throw error;
         
@@ -319,7 +335,6 @@ export default function Customers() {
         return;
       }
 
-      // 💡 오류의 핵심 원인 제거 (수량, 금액을 확실한 숫자로 변환)
       const { error } = await supabase.from('claims').insert([{
         customer_id: selectedCustomer.id,
         product_id: grantData.product_id, 
@@ -346,12 +361,31 @@ export default function Customers() {
     }
   }
 
+  // 💡 신규 대상자 등록 (모달 오픈)
+  const openCreateModal = () => {
+    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
+    setSelectedPrimaryRegion(''); // 1차 지역 초기화
+    setEditingId(null);
+    setIsModalOpen(true);
+  };
+
   const openEditModal = (c) => {
     setFormData({ 
       ...c, 
       local_gov_id: c.local_gov_id?.toString() || '',
+      nhis_branch_id: c.nhis_branch_id?.toString() || '', 
       qualification: c.qualification || '의료급여' 
     }); 
+
+    // 💡 수정 시 기존 데이터를 기반으로 1차 지역명 세팅
+    if (c.qualification === '건강보험' || c.qualification === '경감(건강보험)') {
+      const branch = nhisBranches.find(b => String(b.id) === String(c.nhis_branch_id));
+      setSelectedPrimaryRegion(branch?.region?.split(' ')[0] || '');
+    } else {
+      const gov = govs.find(g => String(g.id) === String(c.local_gov_id));
+      setSelectedPrimaryRegion(gov?.name?.split(' ')[0] || '');
+    }
+
     setEditingId(c.id); setIsModalOpen(true);
     setTimeout(() => { 
       if (c.signature && canvasRef.current) { 
@@ -365,7 +399,7 @@ export default function Customers() {
 
   const closeModal = () => { 
     setIsModalOpen(false); setEditingId(null); 
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
+    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
   };
 
   const getCoordinates = (e) => {
@@ -461,6 +495,17 @@ export default function Customers() {
     currentPage * itemsPerPage
   );
 
+  // 💡 모달 내 1차(시도) / 2차(상세 기관) 필터 옵션 추출
+  const isHealthInsuranceForm = formData.qualification === '건강보험' || formData.qualification === '경감(건강보험)';
+  
+  const primaryOptions = isHealthInsuranceForm 
+    ? [...new Set(nhisBranches.map(b => b.region?.split(' ')[0]).filter(r => r && r !== '-' && r !== '기타'))].sort()
+    : [...new Set(govs.map(g => g.name?.split(' ')[0]).filter(r => r && r !== '-' && r !== '기타'))].sort();
+
+  const secondaryOptions = isHealthInsuranceForm
+    ? nhisBranches.filter(b => b.region?.split(' ')[0] === selectedPrimaryRegion)
+    : govs.filter(g => g.name?.split(' ')[0] === selectedPrimaryRegion);
+
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
       
@@ -469,7 +514,7 @@ export default function Customers() {
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">대상자 관리</h1>
           <p className="text-gray-500 mt-2 font-bold flex items-center gap-2"><Users size={18} className="text-blue-600"/> 총 {customers.length}명 등록됨</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all">
+        <button onClick={openCreateModal} className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl flex items-center justify-center gap-2 hover:scale-105 transition-all">
           <Plus size={20}/> 신규 대상자 등록
         </button>
       </div>
@@ -489,7 +534,11 @@ export default function Customers() {
                     {c.name} <span className="text-xs text-gray-400 font-bold ml-1">({c.gender})</span>
                     <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] whitespace-nowrap">{c.qualification || '의료급여'}</span>
                   </h3>
-                  <p className="text-[11px] font-bold text-blue-600 mt-0.5">{c.local_governments?.name || '관할 미지정'}</p>
+                  <p className="text-[11px] font-bold text-blue-600 mt-0.5">
+                    {(c.qualification === '건강보험' || c.qualification === '경감(건강보험)')
+                      ? cleanBranchName(c.nhis_branches?.name || '공단지사 미지정')
+                      : (c.local_governments?.name || '관할 미지정')}
+                  </p>
                 </div>
                 
                 <div className="flex gap-1.5">
@@ -524,7 +573,7 @@ export default function Customers() {
             <tr className="bg-gray-50/50 border-b border-gray-50 text-[11px] font-black text-gray-400 uppercase tracking-widest">
               <th className="p-7 w-20 text-center">No.</th>
               <th className="p-7">수급자 정보</th>
-              <th className="p-7">관할 지자체</th>
+              <th className="p-7">관할 기관(지자체/공단)</th>
               <th className="p-7">최근 교부 / 내구연한</th>
               <th className="p-7 text-center">서명</th>
               <th className="p-7 text-center">관리</th>
@@ -542,7 +591,11 @@ export default function Customers() {
                       {c.name} ({c.gender})
                       <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px]">{c.qualification || '의료급여'}</span>
                     </td>
-                    <td className="p-7 text-gray-700">{c.local_governments?.name || '미지정'}</td>
+                    <td className="p-7 text-gray-700">
+                      {(c.qualification === '건강보험' || c.qualification === '경감(건강보험)')
+                        ? cleanBranchName(c.nhis_branches?.name || '미지정')
+                        : (c.local_governments?.name || '미지정')}
+                    </td>
                     <td className="p-7">{renderLifespanStatus(c)}</td>
                     <td className="p-7 text-center">{c.signature ? <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-md text-xs font-black">완료</span> : <span className="bg-red-50 text-red-600 px-3 py-1 rounded-md text-xs font-black">필요</span>}</td>
                     <td className="p-7 text-center">
@@ -605,7 +658,6 @@ export default function Customers() {
           <div className="bg-white w-full max-w-3xl rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 flex flex-col max-h-[95vh] font-bold">
             <div className="p-6 md:p-10 border-b bg-blue-50/30 flex justify-between items-center shrink-0">
               <h4 className="text-xl md:text-2xl font-black">{editingId ? '대상자 정보 수정' : '신규 대상자 등록'}</h4>
-              
               <button onClick={closeModal} className="p-2 rounded-full hover:bg-white"><X size={24}/></button>
             </div>
             
@@ -672,7 +724,15 @@ export default function Customers() {
                   <select 
                     className="w-full bg-indigo-50/50 text-indigo-900 font-black p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none border border-indigo-100" 
                     value={formData.qualification} 
-                    onChange={e => setFormData({...formData, qualification: e.target.value})}
+                    onChange={e => {
+                      setFormData({
+                        ...formData, 
+                        qualification: e.target.value, 
+                        local_gov_id: '', 
+                        nhis_branch_id: '' 
+                      });
+                      setSelectedPrimaryRegion(''); // 자격 변경 시 지역 필터 리셋
+                    }}
                   >
                     <option value="의료급여">의료급여</option>
                     <option value="건강보험">건강보험</option>
@@ -681,10 +741,51 @@ export default function Customers() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">지자체</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.local_gov_id} onChange={e => setFormData({...formData, local_gov_id: e.target.value})}><option value="">지자체 선택</option>{govs.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
-                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애유형</label><input placeholder="장애유형 (예: 지체)" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_type} onChange={e => setFormData({...formData, disability_type: e.target.value})} /></div>
-                <div className="space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애정도</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_level} onChange={e => setFormData({...formData, disability_level: e.target.value})}><option value="심함">심함</option><option value="심하지 않음">심하지 않음</option></select></div>
+              {/* 💡 관할 지역 2단계 선택 (시도 -> 상세 기관) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="flex gap-3">
+                  <div className="w-2/5 space-y-1.5">
+                    <label className="text-xs text-gray-400 ml-1">관할 지역 (시/도)</label>
+                    <select 
+                      className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none"
+                      value={selectedPrimaryRegion}
+                      onChange={(e) => {
+                        setSelectedPrimaryRegion(e.target.value);
+                        setFormData({...formData, local_gov_id: '', nhis_branch_id: ''}); 
+                      }}
+                    >
+                      <option value="">시/도 선택</option>
+                      {primaryOptions.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div className="w-3/5 space-y-1.5">
+                    <label className="text-xs text-gray-400 ml-1">상세 기관명</label>
+                    <select 
+                      className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none"
+                      value={isHealthInsuranceForm ? formData.nhis_branch_id : formData.local_gov_id}
+                      onChange={e => {
+                        if (isHealthInsuranceForm) {
+                          setFormData({...formData, nhis_branch_id: e.target.value, local_gov_id: ''});
+                        } else {
+                          setFormData({...formData, local_gov_id: e.target.value, nhis_branch_id: ''});
+                        }
+                      }}
+                      disabled={!selectedPrimaryRegion}
+                    >
+                      <option value="">{isHealthInsuranceForm ? '공단지사 선택' : '지자체 선택'}</option>
+                      {secondaryOptions.map(opt => (
+                        <option key={opt.id} value={opt.id}>
+                          {isHealthInsuranceForm ? cleanBranchName(opt.name) : opt.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="w-1/2 space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애유형</label><input placeholder="예: 지체" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_type} onChange={e => setFormData({...formData, disability_type: e.target.value})} /></div>
+                  <div className="w-1/2 space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애정도</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_level} onChange={e => setFormData({...formData, disability_level: e.target.value})}><option value="심함">심함</option><option value="심하지 않음">심하지 않음</option></select></div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
