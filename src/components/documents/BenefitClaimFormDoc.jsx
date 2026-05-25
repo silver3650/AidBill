@@ -231,13 +231,13 @@ export default function BenefitClaimFormDoc({ data }) {
           <tr>
             <TableCell rowSpan="4" className="w-[16%] font-bold bg-slate-100 leading-snug">③ 급여를 받을<br/>사람 외 청구인</TableCell>
             <TableCell rowSpan="2" className="w-[6%] bg-slate-100 font-bold px-0">가족</TableCell>
-            <TableCell className="bg-slate-100 font-bold w-[10%]">성명</TableCell>
+            <TableCell className="bg-slate-100 font-bold w-[9%]">성명</TableCell>
             {/* 💡 요청: 개인(가족) 선택 시에만 입력 */}
             <TableCell className="w-[15%]">{isFamilyClaim ? claimant?.name : ''}</TableCell>
             <TableCell className="bg-slate-100 font-bold w-[12%]">주민등록번호</TableCell>
             <TableCell className="w-[15%]">{isFamilyClaim ? claimant?.resident_number : ''}</TableCell>
-            <TableCell className="bg-slate-100 font-bold w-[15%] leading-tight">급여를 받을 사람<br/>과의 관계</TableCell>
-            <TableCell className="w-[12%]">{isFamilyClaim ? claimant?.relation : ''}</TableCell>
+            <TableCell className="bg-slate-100 font-bold w-[14%] leading-tight">급여를 받을<br/>사람과의 관계</TableCell>
+            <TableCell className="w-[13%]">{isFamilyClaim ? claimant?.relation : ''}</TableCell>
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold">연락처</TableCell>
@@ -275,13 +275,13 @@ export default function BenefitClaimFormDoc({ data }) {
           <tr>
             <TableCell rowSpan="3" className="w-[16%] font-bold bg-slate-100">④ 구입처</TableCell>
             <TableCell className="w-[14%] bg-slate-100 font-bold text-left px-2 border-r-0">상호</TableCell>
-            <TableCell className="w-[15%] border-l-0 text-left px-2">{company?.name}</TableCell>
+            <TableCell colSpan="2" className="w-[28%] border-l-0 text-left px-2">{company?.name}</TableCell>
             <TableCell className="w-[15%] bg-slate-100 font-bold text-left px-2 border-r-0">대표자</TableCell>
-            <TableCell className="w-[40%] border-l-0 text-left px-2">{company?.representative}</TableCell>
+            <TableCell className="w-[27%] border-l-0 text-left px-2">{company?.representative}</TableCell>
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold text-left px-2 border-r-0">사업자등록번호</TableCell>
-            <TableCell className="border-l-0 text-left px-2">{company?.business_number}</TableCell>
+            <TableCell colSpan="2" className="border-l-0 text-left px-2">{company?.business_number}</TableCell>
             <TableCell className="bg-slate-100 font-bold text-left px-2 border-r-0">전화번호</TableCell>
             <TableCell className="border-l-0 text-left px-2">{company?.phone}</TableCell>
           </tr>
@@ -289,7 +289,7 @@ export default function BenefitClaimFormDoc({ data }) {
             <TableCell colSpan="2" className="bg-slate-100 font-bold text-left px-2 border-r-0 whitespace-nowrap">
               주소<span className="font-normal"> (미등록 업소만 기록합니다)</span>
             </TableCell>
-            <TableCell colSpan="2" className="text-left px-2 border-l-0">{company?.address}</TableCell>
+            <TableCell colSpan="3" className="text-left px-2 border-l-0">{company?.address}</TableCell>
           </tr>
         </tbody>
       </table>
@@ -322,13 +322,13 @@ export default function BenefitClaimFormDoc({ data }) {
         <tbody>
           <tr>
             <TableCell rowSpan="3" className="w-[8%] font-bold bg-slate-100 leading-snug">⑩<br/>수령<br/>계좌</TableCell>
-            <TableCell className="text-left px-2 w-[35%]">
+            <TableCell className="text-left px-2 w-[36%]">
               [ <CheckBox checked={isSelfClaim || isFamilyClaim} /> ] 가입자 또는 피부양자 계좌
             </TableCell>
             <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[10%]">금융기관명</TableCell>
-            <TableCell rowSpan="2" className="w-[15%]">{displayBank}</TableCell>
-            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[19%]">계좌번호</TableCell>
-            <TableCell rowSpan="2">{displayAccountNum}</TableCell>
+            <TableCell rowSpan="2" className="w-[10%]">{displayBank}</TableCell>
+            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[18%]">계좌번호</TableCell>
+            <TableCell rowSpan="2" className="w-[18%]">{displayAccountNum}</TableCell>
           </tr>
           <tr>
             <TableCell className="text-left px-2">
@@ -338,7 +338,7 @@ export default function BenefitClaimFormDoc({ data }) {
           <tr>
             <TableCell className="text-left px-2 leading-tight">
               [ <CheckBox checked={false} /> ] 급여를 받을 사람 본인의 요양비등 수급계좌<br/>
-              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(압류방지 계좌)
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(압류방지 계좌)
             </TableCell>
             <TableCell className="bg-slate-100 font-bold">예금주</TableCell>
             <TableCell>{displayHolder}</TableCell>
