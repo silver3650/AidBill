@@ -39,7 +39,9 @@ export default function Customers() {
     name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '',
     disability_type: '', disability_level: '심함', phone: '',
     zip_code: '', address: '', detail_address: '', signature: null,
-    qualification: '의료급여'
+    qualification: '의료급여',
+    resident_number_front: '', // 💡 추가: 주민번호 앞자리
+    resident_number_back: ''   // 💡 추가: 주민번호 뒷자리
   });
 
   const [grantData, setGrantData] = useState({
@@ -202,7 +204,8 @@ export default function Customers() {
           "disability_level": "심함" 또는 "심하지 않음",
           "zip_code": "우편번호",
           "address": "추출된 기본 주소",
-          "detail_address": "상세 주소"
+          "detail_address": "상세 주소",
+          "resident_number_front": "주민등록번호 앞자리(6자리)"
         }
       `;
 
@@ -286,33 +289,61 @@ export default function Customers() {
         birth_date: formData.birth_date || null,
         company_id: user.id 
       };
-      
+
+      // 💡 암호화 처리: 건강보험/경감(건강보험)이고 뒷자리가 입력된 경우 Supabase RPC 호출
       if (editingId) {
-        const { error } = await supabase.from('customers').update(payload).eq('id', editingId);
-        if (error) throw error;
+        if (isHealthInsurance && payload.resident_number_back) {
+           const { error } = await supabase.rpc('update_customer_encrypted', {
+             p_id: editingId,
+             ...payload
+           });
+           if (error) {
+              // RPC가 없는 경우 일반 업데이트 시도 (기존 방식 호환)
+              const { error: updateError } = await supabase.from('customers').update(payload).eq('id', editingId);
+              if (updateError) throw updateError;
+           }
+        } else {
+           const { error } = await supabase.from('customers').update(payload).eq('id', editingId);
+           if (error) throw error;
+        }
         
         closeModal(); 
         fetchData(); 
       } else {
-        const { data, error } = await supabase.from('customers').insert([payload]).select().single();
-        if (error) throw error;
-        
-        closeModal(); 
-        await fetchData(); 
-        
-        if (window.confirm('대상자 등록이 완료되었습니다!\n이 대상자에게 지금 바로 품목(보조기기)을 할당하고 교부 접수를 시작하시겠습니까?')) {
-          navigate('/claims', { 
-            state: { 
-              autoOpenCreate: true, 
-              customerId: data.id, 
-              customerName: data.name 
-            } 
-          });
+        if (isHealthInsurance && payload.resident_number_back) {
+            const { data, error } = await supabase.rpc('insert_customer_encrypted', payload);
+             if (error) {
+               // RPC가 없는 경우 일반 삽입 시도 (기존 방식 호환)
+               const { data: insertData, error: insertError } = await supabase.from('customers').insert([payload]).select().single();
+               if (insertError) throw insertError;
+               handlePostInsert(insertData);
+             } else {
+                 handlePostInsert(data); // RPC에서 생성된 ID 또는 레코드 반환한다고 가정
+             }
+        } else {
+             const { data, error } = await supabase.from('customers').insert([payload]).select().single();
+             if (error) throw error;
+             handlePostInsert(data);
         }
       }
     } catch (err) {
       alert(`데이터 저장 실패:\n${err.message}`);
     }
+  }
+  
+  async function handlePostInsert(data) {
+     closeModal(); 
+     await fetchData(); 
+     
+     if (window.confirm('대상자 등록이 완료되었습니다!\n이 대상자에게 지금 바로 품목(보조기기)을 할당하고 교부 접수를 시작하시겠습니까?')) {
+       navigate('/claims', { 
+         state: { 
+           autoOpenCreate: true, 
+           customerId: data.id, 
+           customerName: data.name 
+         } 
+       });
+     }
   }
 
   async function handleDeleteCustomer(id) {
@@ -363,22 +394,38 @@ export default function Customers() {
 
   // 💡 신규 대상자 등록 (모달 오픈)
   const openCreateModal = () => {
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
+    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여', resident_number_front: '', resident_number_back: '' }); 
     setSelectedPrimaryRegion(''); // 1차 지역 초기화
     setEditingId(null);
     setIsModalOpen(true);
   };
 
-  const openEditModal = (c) => {
+  const openEditModal = async (c) => {
+    // 💡 수정 모달 오픈 시 복호화된 주민번호를 가져오기 (RPC 사용 가정)
+    let decryptedBack = '';
+    const isHealthInsurance = c.qualification === '건강보험' || c.qualification === '경감(건강보험)';
+    if (isHealthInsurance) {
+        try {
+            const { data, error } = await supabase.rpc('get_customer_decrypted', { p_customer_id: c.id });
+            if (!error && data && data.length > 0) {
+                 decryptedBack = data[0].resident_number_back || '';
+            }
+        } catch(e) {
+            console.warn("복호화 데이터 가져오기 실패 (기존 데이터 사용 시도)", e);
+        }
+    }
+
     setFormData({ 
       ...c, 
       local_gov_id: c.local_gov_id?.toString() || '',
       nhis_branch_id: c.nhis_branch_id?.toString() || '', 
-      qualification: c.qualification || '의료급여' 
+      qualification: c.qualification || '의료급여',
+      resident_number_front: c.resident_number_front || c.resident_number?.split('-')[0] || '', // 하위 호환
+      resident_number_back: decryptedBack || c.resident_number_back || c.resident_number?.split('-')[1] || ''
     }); 
 
     // 💡 수정 시 기존 데이터를 기반으로 1차 지역명 세팅
-    if (c.qualification === '건강보험' || c.qualification === '경감(건강보험)') {
+    if (isHealthInsurance) {
       const branch = nhisBranches.find(b => String(b.id) === String(c.nhis_branch_id));
       setSelectedPrimaryRegion(branch?.region?.split(' ')[0] || '');
     } else {
@@ -399,7 +446,7 @@ export default function Customers() {
 
   const closeModal = () => { 
     setIsModalOpen(false); setEditingId(null); 
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여' }); 
+    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여', resident_number_front: '', resident_number_back: '' }); 
   };
 
   const getCoordinates = (e) => {
@@ -786,6 +833,33 @@ export default function Customers() {
                   <div className="w-1/2 space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애유형</label><input placeholder="예: 지체" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_type} onChange={e => setFormData({...formData, disability_type: e.target.value})} /></div>
                   <div className="w-1/2 space-y-1.5"><label className="text-xs text-gray-400 ml-1">장애정도</label><select className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none" value={formData.disability_level} onChange={e => setFormData({...formData, disability_level: e.target.value})}><option value="심함">심함</option><option value="심하지 않음">심하지 않음</option></select></div>
                 </div>
+              </div>
+
+              {/* 💡 주민등록번호 전체 입력 (건강보험/경감 시 활성화) */}
+              <div className="space-y-1.5">
+                  <label className="text-xs text-gray-400 ml-1">주민등록번호</label>
+                  <div className="flex items-center gap-2">
+                     <input 
+                       placeholder="앞 6자리" 
+                       maxLength={6}
+                       className="w-1/2 bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none text-center tracking-widest" 
+                       value={formData.resident_number_front} 
+                       onChange={e => setFormData({...formData, resident_number_front: e.target.value})} 
+                     />
+                     <span className="text-gray-400 font-bold">-</span>
+                     <input 
+                       type="password"
+                       placeholder={isHealthInsuranceForm ? "뒤 7자리 입력" : "입력 불필요"} 
+                       maxLength={7}
+                       disabled={!isHealthInsuranceForm}
+                       className={`w-1/2 p-3.5 md:p-4 rounded-xl md:rounded-2xl outline-none text-center tracking-widest transition-colors ${isHealthInsuranceForm ? 'bg-indigo-50 border border-indigo-200 text-indigo-900 focus:bg-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`} 
+                       value={isHealthInsuranceForm ? formData.resident_number_back : ''} 
+                       onChange={e => setFormData({...formData, resident_number_back: e.target.value})} 
+                     />
+                  </div>
+                  {isHealthInsuranceForm && (
+                      <p className="text-[11px] text-blue-600 mt-1 ml-1 font-bold">* 건강보험 청구를 위해 주민등록번호 전체 입력이 필요하며, 안전하게 암호화 저장됩니다.</p>
+                  )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">

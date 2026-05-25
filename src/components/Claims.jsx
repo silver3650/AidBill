@@ -14,7 +14,7 @@ import ConfirmationDoc from '../components/documents/ConfirmationDoc';
 import ReceiptDoc from '../components/documents/ReceiptDoc'; 
 import EstimateDoc from '../components/documents/EstimateDoc';
 import TransactionDoc from '../components/documents/TransactionDoc';
-import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc'; // 💡 공단용 급여 지급청구서 추가
+import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc';
 
 const ImageOnlyDoc = ({ title, src, emptyMessage, notice }) => (
   <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col items-center justify-start text-slate-900 box-border overflow-hidden relative">
@@ -55,11 +55,16 @@ export default function Claims() {
   const [activeModal, setActiveModal] = useState(null); 
   const [selectedClaim, setSelectedClaim] = useState(null);
   
-  // 💡 공단 청구 주체 상태 (개인 vs 기업)
-  const [claimSubject, setClaimSubject] = useState('기업');
+  const [claimSubject, setClaimSubject] = useState('기업 (업체 위탁 청구)');
 
-  const [newData, setNewData] = useState({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0 });
-  const [editData, setEditData] = useState({ claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', notes: '' });
+  // 💡 인쇄/메일 모달에서 즉석으로 입력받을 계좌 및 가족 정보 (DB 저장 안됨, 인쇄용)
+  const [docInputs, setDocInputs] = useState({
+    bank: '', account_number: '', holder: '',
+    claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: ''
+  });
+
+  const [newData, setNewData] = useState({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '' });
+  const [editData, setEditData] = useState({ claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', notes: '', purchase_date: '', mfg_date: '' });
   const [photoFiles, setPhotoFiles] = useState([]); 
 
   const [emailData, setEmailData] = useState({ recipient: '', sender: '', subject: '', content: '', files: {} });
@@ -80,7 +85,6 @@ export default function Claims() {
 
   const pdfContainerRef = useRef(null);
 
-  // 💡 대상자 자격 구분에 따른 필요 서류 목록 분리
   const LOCAL_GOV_DOCS = [
     '교부비용청구서', '교부확인서', '사업자등록증', '계좌사본', 
     '물품인수증', '견적서', '거래명세서', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
@@ -99,7 +103,7 @@ export default function Claims() {
   const getDocsListForClaim = (claim, subject = claimSubject) => {
     const qual = claim?.customers?.qualification;
     if (qual === '건강보험' || qual === '경감(건강보험)') {
-      return subject === '기업' ? NHIS_COMPANY_DOCS : NHIS_PERSONAL_DOCS;
+      return subject.includes('기업') ? NHIS_COMPANY_DOCS : NHIS_PERSONAL_DOCS;
     }
     return LOCAL_GOV_DOCS;
   };
@@ -147,7 +151,9 @@ export default function Claims() {
         customer_id: passedId,
         product_id: '',
         claim_date: new Date().toISOString().split('T')[0],
-        total_amount: 0
+        total_amount: 0,
+        purchase_date: '',
+        mfg_date: ''
       }));
       
       setCustSearchTerm(passedName); 
@@ -160,18 +166,11 @@ export default function Claims() {
 
   async function fetchCompanyData(userId) {
     let { data } = await supabase.from('company_profile').select('*').eq('company_id', userId).single();
-    
     if (!data) {
       const { data: fallbackData } = await supabase.from('company_profile').select('*').eq('id', 1).single();
       if (fallbackData) data = fallbackData;
     }
-    
-    if (data) {
-      setCompanyInfo({
-        ...data,
-        qualifying_docs: data.qualifying_docs || []
-      }); 
-    }
+    if (data) setCompanyInfo({ ...data, qualifying_docs: data.qualifying_docs || [] }); 
   }
 
   async function fetchData(userId) {
@@ -180,7 +179,7 @@ export default function Claims() {
       const { data: claimData } = await supabase.from('claims').select('*').eq('company_id', userId).order('claim_date', { ascending: false });
       const { data: custData } = await supabase.from('customers').select('*').eq('company_id', userId).order('name');
       const { data: govData } = await supabase.from('local_governments').select('*');
-      const { data: nhisData } = await supabase.from('nhis_branches').select('*'); // 공단지사 로드
+      const { data: nhisData } = await supabase.from('nhis_branches').select('*');
       const { data: deviceData } = await supabase.from('devices').select('*').order('name');
 
       setAllCustomers(custData || []);
@@ -191,8 +190,16 @@ export default function Claims() {
         let customerWithGov = null;
 
         if (customerObj) {
+          let fullRrn = customerObj.resident_number;
+          if (customerObj.resident_number_front) {
+            fullRrn = customerObj.resident_number_back
+              ? `${customerObj.resident_number_front}-${customerObj.resident_number_back}`
+              : `${customerObj.resident_number_front}`;
+          }
+
           customerWithGov = {
             ...customerObj,
+            resident_number: fullRrn,
             local_governments: govData?.find(g => String(g.id) === String(customerObj.local_gov_id)) || null,
             nhis_branches: nhisData?.find(n => String(n.id) === String(customerObj.nhis_branch_id)) || null
           };
@@ -215,16 +222,18 @@ export default function Claims() {
         }
 
         let mappedStatus = h.status || '대기 중';
-        if (mappedStatus === '지급 완료') {
-          mappedStatus = '정산 완료';
-        } else if (mappedStatus === '청구 완료') {
-          mappedStatus = '청구 완료 (계산서 미발행)'; 
-        }
+        if (mappedStatus === '지급 완료') mappedStatus = '정산 완료';
+        else if (mappedStatus === '청구 완료') mappedStatus = '청구 완료 (계산서 미발행)'; 
 
         return {
           ...h,
           customers: customerWithGov,
-          products: { ...matchedDevice, name: fullProductName },
+          products: { 
+            ...matchedDevice, 
+            name: fullProductName,
+            purchase_date: h.purchase_date || matchedDevice?.purchase_date || '',
+            mfg_date: h.mfg_date || matchedDevice?.mfg_date || ''
+          },
           status: mappedStatus,
           receipt_photos: parsedPhotos 
         };
@@ -342,6 +351,8 @@ export default function Claims() {
       product_id: newData.product_id,
       claim_date: newData.claim_date, 
       total_amount: parseInt(newData.total_amount) || 0, 
+      purchase_date: newData.purchase_date || null,
+      mfg_date: newData.mfg_date || null,
       status: '대기 중',
       claim_type: isNHIS ? '공단' : '지자체',
       company_id: user.id
@@ -350,12 +361,7 @@ export default function Claims() {
     if (!error) {
       alert('접수 완료되었습니다.'); 
       setActiveModal(null);
-      setNewData({ 
-        customer_id: '', 
-        product_id: '', 
-        claim_date: new Date().toISOString().split('T')[0], 
-        total_amount: 0 
-      });
+      setNewData({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '' });
       setCustSearchTerm('');
       setProdSearchTerm('');
       fetchData(user.id);
@@ -369,7 +375,9 @@ export default function Claims() {
       customer_id: claim.customer_id || '',
       product_id: '',
       claim_date: new Date().toISOString().split('T')[0],
-      total_amount: 0
+      total_amount: 0,
+      purchase_date: '',
+      mfg_date: ''
     });
     setCustSearchTerm(claim.customers?.name || '');
     setProdSearchTerm('');
@@ -384,7 +392,9 @@ export default function Claims() {
       status: claim.status || '대기 중',
       carrier: claim.carrier || 'CJ대한통운',
       tracking_no: claim.tracking_no || '',
-      notes: claim.notes || ''
+      notes: claim.notes || '',
+      purchase_date: claim.purchase_date || '',
+      mfg_date: claim.mfg_date || ''
     });
     setPhotoFiles(claim.receipt_photos || []);
     setActiveModal('edit');
@@ -429,7 +439,6 @@ export default function Claims() {
 
   const handleEditSubmit = async () => {
     let newStatus = editData.status;
-    
     if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) {
       newStatus = '교부 완료';
     } else if (editData.tracking_no && newStatus === '대기 중') {
@@ -443,7 +452,9 @@ export default function Claims() {
       carrier: editData.carrier,
       tracking_no: editData.tracking_no,
       receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
-      notes: editData.notes || ''
+      notes: editData.notes || '',
+      purchase_date: editData.purchase_date || null,
+      mfg_date: editData.mfg_date || null
     };
 
     try {
@@ -491,7 +502,7 @@ export default function Claims() {
     const initialFiles = {};
 
     if (isNHIS) {
-      const docsToUse = subject === '기업' ? NHIS_COMPANY_DOCS : NHIS_PERSONAL_DOCS;
+      const docsToUse = subject.includes('기업') ? NHIS_COMPANY_DOCS : NHIS_PERSONAL_DOCS;
       docsToUse.forEach(doc => initialFiles[doc] = true);
       return initialFiles;
     }
@@ -556,7 +567,9 @@ export default function Claims() {
   const openEmailModal = (claim) => {
     setSelectedClaim(claim);
     setIssueDate(new Date().toISOString().split('T')[0]); 
-    setClaimSubject('기업'); // 기본값 기업
+    setClaimSubject('기업 (업체 위탁 청구)'); 
+    setDocInputs({ bank: '', account_number: '', holder: '', claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '' });
+    
     const gov = claim.customers?.local_governments || claim.customers?.nhis_branches || {};
     
     let managers = [];
@@ -573,7 +586,7 @@ export default function Claims() {
       defaultRecipient = `${managers[0].email} (${gov.name}/${managers[0].name || '담당자'})`;
     }
     
-    const initialFiles = getInitialFilesFromGov(claim, '기업'); 
+    const initialFiles = getInitialFilesFromGov(claim, '기업 (업체 위탁 청구)'); 
     
     const currentCompanyName = companyInfo.company_name || '(주)케어플러스';
     const currentCustomerName = claim.customers?.name || '대상자';
@@ -593,14 +606,15 @@ export default function Claims() {
   const openPrintModal = (claim) => {
     setSelectedClaim(claim);
     setIssueDate(new Date().toISOString().split('T')[0]); 
-    setClaimSubject('기업'); // 기본값 기업
-    const initialFiles = getInitialFilesFromGov(claim, '기업');
+    setClaimSubject('기업 (업체 위탁 청구)');
+    setDocInputs({ bank: '', account_number: '', holder: '', claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '' });
+    
+    const initialFiles = getInitialFilesFromGov(claim, '기업 (업체 위탁 청구)');
     setPrintFiles(initialFiles); 
     setIsPrintDocPreview(false); 
     setActiveModal('print');
   };
 
-  // 💡 청구 주체 변경 핸들러
   const handleSubjectChange = (subject, mode = 'print') => {
     setClaimSubject(subject);
     const newFiles = getInitialFilesFromGov(selectedClaim, subject);
@@ -675,7 +689,6 @@ export default function Claims() {
 
   const handleForcePrint = () => { window.print(); };
 
-  // 💡 위임장 렌더링 템플릿
   const renderDelegationDoc = (claimData, companyData) => (
     <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
       <h1 className="text-3xl font-black mb-12 text-center tracking-[0.5em] mt-10">위 임 장</h1>
@@ -744,8 +757,30 @@ export default function Claims() {
   const renderDocument = (fileName, claimData) => {
     const TargetDoc = documentComponents[fileName];
     
+    // 💡 docInputs에 입력된 즉석 데이터를 서류 양식 객체에 덮어씌움
     const adjustedClaimData = {
       ...claimData,
+      customer: claimData.customers || {},
+      product: claimData.products || {},
+      account: {
+        bank: docInputs.bank || claimData.account?.bank || '',
+        account_number: docInputs.account_number || claimData.account?.account_number || '',
+        holder: docInputs.holder || claimData.account?.holder || ''
+      },
+      claimant: {
+        name: docInputs.claimant_name || claimData.claimant?.name || '',
+        relation: docInputs.claimant_relation || claimData.claimant?.relation || '',
+        resident_number: docInputs.claimant_rrn || claimData.claimant?.resident_number || '',
+        phone: docInputs.claimant_phone || claimData.claimant?.phone || '',
+        mobile: docInputs.claimant_phone || claimData.claimant?.mobile || ''
+      },
+      company: companyInfo || {},
+      signatures: {
+        claimant_sign: claimData.claimant?.signature || claimData.customers?.signature,
+        customer_sign: claimData.customers?.signature,
+        company_seal: companyInfo?.seal_image
+      },
+      claimSubject: claimSubject,
       issue_date: issueDate, issueDate: issueDate, written_date: issueDate, writtenDate: issueDate,
       write_date: issueDate, writeDate: issueDate, doc_date: issueDate, docDate: issueDate,
       publish_date: issueDate, publishDate: issueDate, confirm_date: issueDate, confirmDate: issueDate,
@@ -757,14 +792,17 @@ export default function Claims() {
     if (fileName === '교부비용청구서' || fileName === '거래명세서' || fileName === '보조기기 급여 지급청구서') {
       adjustedClaimData.claim_date = issueDate;
     } else {
-      adjustedClaimData.claim_date = claimData.claim_date;
+      adjustedClaimData.claim_date = claimData.claim_date || issueDate;
     }
 
     if (TargetDoc) {
-      return <TargetDoc data={adjustedClaimData} company={companyInfo} />;
+      try {
+        return <TargetDoc data={adjustedClaimData} company={companyInfo} />;
+      } catch (error) {
+        return <div className="h-[297mm] flex flex-col items-center justify-center text-red-500 font-bold bg-red-50 p-10 text-center">서류 렌더링 중 오류가 발생했습니다.<br/>{error.message}</div>;
+      }
     } 
     
-    // 💡 서류 매핑 처리 (지자체 + 공단)
     if (fileName === '사업자등록증') {
       return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
     } else if (fileName === '계좌사본') {
@@ -800,7 +838,6 @@ export default function Claims() {
         />
       );
     } else if (fileName === '검수확인서') {
-      // 💡 품목에 따른 검수확인서 면제 예외 처리 (예시: 지팡이, 목발 등)
       const exemptedProducts = ['지팡이', '목발', '흰지팡이', '시각장애인용 지팡이', '워커', '보행차']; 
       const isExempted = exemptedProducts.some(ep => claimData.products?.name?.includes(ep));
 
@@ -855,6 +892,55 @@ export default function Claims() {
       );
     }
     return <div className="h-[297mm] flex items-center justify-center text-gray-400 font-bold">문서 양식을 찾을 수 없습니다.</div>;
+  };
+
+  // 💡 모달에 삽입될 즉석 입력폼 UI 컴포넌트
+  const renderDocInputs = () => {
+    if (claimSubject === '기업 (업체 위탁 청구)') return null;
+
+    return (
+      <div className="mt-3 p-4 bg-white rounded-xl border border-gray-200 shadow-sm animate-in fade-in">
+        <div className="text-[11px] font-black text-indigo-600 mb-3 flex items-center gap-1">
+          <Edit3 size={14}/> {claimSubject === '개인 (본인 계좌 청구)' ? '본인 환급 계좌 정보 (청구서 인쇄용)' : '가족 대리인 및 계좌 정보 (청구서 인쇄용)'}
+        </div>
+        
+        {claimSubject === '개인 (가족 계좌 청구)' && (
+          <>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold block mb-1">가족 성명</label>
+                <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_name} onChange={e => setDocInputs({...docInputs, claimant_name: e.target.value})} placeholder="예: 홍길동" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold block mb-1">대상자와의 관계</label>
+                <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_relation} onChange={e => setDocInputs({...docInputs, claimant_relation: e.target.value})} placeholder="예: 배우자, 자녀" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-gray-100">
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold block mb-1">주민등록번호</label>
+                <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_rrn} onChange={e => setDocInputs({...docInputs, claimant_rrn: e.target.value})} placeholder="- 포함 14자리" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500 font-bold block mb-1">연락처</label>
+                <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_phone} onChange={e => setDocInputs({...docInputs, claimant_phone: e.target.value})} placeholder="010-0000-0000" />
+              </div>
+            </div>
+          </>
+        )}
+        
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-[10px] text-gray-500 font-bold block mb-1">환급 은행명</label>
+            <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.bank} onChange={e => setDocInputs({...docInputs, bank: e.target.value})} placeholder="예: 국민은행" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-[10px] text-gray-500 font-bold block mb-1">계좌번호 (예금주: {claimSubject === '개인 (본인 계좌 청구)' ? selectedClaim?.customers?.name : docInputs.claimant_name})</label>
+            <input className="w-full p-2 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.account_number} onChange={e => setDocInputs({...docInputs, account_number: e.target.value})} placeholder="- 포함 계좌번호 입력" />
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderStatusPipeline = (claim) => {
@@ -1288,6 +1374,16 @@ export default function Claims() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
+                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">구입일</label>
+                    <input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.purchase_date} onChange={e => setNewData({...newData, purchase_date: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">제조일</label>
+                    <input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.mfg_date} onChange={e => setNewData({...newData, mfg_date: e.target.value})} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
                     <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label>
                     <input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} />
                   </div>
@@ -1354,6 +1450,16 @@ export default function Claims() {
                           <select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>
                             {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
+                        </div>
+                        <div className="flex flex-col md:flex-row gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label>
+                            <input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label>
+                            <input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} />
+                          </div>
                         </div>
                         <div className="flex flex-col md:flex-row gap-2">
                           <div className="flex-1">
@@ -1462,24 +1568,33 @@ export default function Claims() {
                   <div className="flex flex-col md:grid md:grid-cols-5 h-full overflow-y-auto custom-scrollbar">
                     <div className="md:col-span-3 p-5 md:p-6 space-y-4 md:border-r">
                       
-                      {/* 💡 공단 청구 대상자인 경우 청구 주체 선택 UI 표시 */}
                       {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
                         <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-1">
                           <label className="text-[11px] text-indigo-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
                           <div className="flex gap-2 mt-2">
                             <button 
-                              onClick={() => handleSubjectChange('개인', 'email')} 
-                              className={`flex-1 py-2.5 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                              onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'email')} 
+                              className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                             >
-                              개인 (본인 직접청구)
+                              개인 (본인 계좌)
                             </button>
                             <button 
-                              onClick={() => handleSubjectChange('기업', 'email')} 
-                              className={`flex-1 py-2.5 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                              onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'email')} 
+                              className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                             >
-                              기업 (업체 위탁청구)
+                              개인 (가족 계좌)
+                            </button>
+                            <button 
+                              onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'email')} 
+                              className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                            >
+                              기업 (업체 위탁)
                             </button>
                           </div>
+                          
+                          {/* 💡 이메일 모달: 입력 폼 호출 */}
+                          {renderDocInputs()}
+
                         </div>
                       )}
 
@@ -1572,25 +1687,34 @@ export default function Claims() {
                 {!isPrintDocPreview ? (
                   <div className="p-5 md:p-8 overflow-y-auto bg-gray-50 flex-1 flex items-start md:items-center justify-center custom-scrollbar">
                     <div className="w-full max-w-2xl space-y-4">
-                       
-                       {/* 💡 공단 청구 대상자인 경우 청구 주체 선택 UI 표시 */}
+                        
                        {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
                          <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
                            <label className="text-[11px] text-gray-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
                            <div className="flex gap-2 mt-2">
                              <button 
-                               onClick={() => handleSubjectChange('개인', 'print')} 
-                               className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                               onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'print')} 
+                               className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
                              >
-                               개인 (본인 직접청구)
+                               개인 (본인 계좌)
                              </button>
                              <button 
-                               onClick={() => handleSubjectChange('기업', 'print')} 
-                               className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                               onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'print')} 
+                               className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
                              >
-                               기업 (업체 위탁청구)
+                               개인 (가족 계좌)
+                             </button>
+                             <button 
+                               onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'print')} 
+                               className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                             >
+                               기업 (업체 위탁)
                              </button>
                            </div>
+                           
+                           {/* 💡 인쇄 모달: 입력 폼 호출 */}
+                           {renderDocInputs()}
+
                          </div>
                        )}
 
