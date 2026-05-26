@@ -17,7 +17,7 @@ export default function CompanyProfile() {
     company_name: '', business_number: '', biz_type: '', biz_item: '',
     representative_name: '', representative_birth: '', contact_number: '',
     email: '', zip_code: '', address: '', detail_address: '',
-    // 💡 신규 추가된 계좌 정보 필드
+    // 💡 실제 DB 컬럼에 맞게 bank_name 으로 복구
     bank_name: '', account_number: '', account_holder: '',
     seal_image: null, biz_reg_image: null, bankbook_image: null,
     qualifying_docs: [] 
@@ -32,14 +32,12 @@ export default function CompanyProfile() {
     
     async function fetchCompanyData() {
       try {
-        // 💡 수정됨: getUser() 통신 지연 방지를 위해 getSession() 활용
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) return;
         
         const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
         
         if (data && isMounted) {
-          // 💡 수정됨: 새로 추가된 필드가 DB에서 누락되어 넘어오더라도 기존 초기 상태값을 날리지 않도록 병합(Merge)
           setFormData(prev => ({ 
             ...prev, 
             ...data, 
@@ -133,12 +131,6 @@ export default function CompanyProfile() {
     if (isLoading) return;
     setIsLoading(true);
 
-    // 💡 수정됨: 무한 스피너 방지를 위한 10초 강제 해제 안전장치 추가
-    const timeoutId = setTimeout(() => {
-      setIsLoading(false);
-      alert("서버 응답이 지연되어 저장이 중단되었습니다. 잠시 후 다시 시도해 주세요.");
-    }, 10000);
-
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !session?.user) {
@@ -155,7 +147,6 @@ export default function CompanyProfile() {
 
       alert('업체 정보가 성공적으로 저장되었습니다.');
       
-      // 저장 직후 최신 데이터를 다시 안전하게 병합
       const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
       if (data) {
         setFormData(prev => ({ 
@@ -165,10 +156,9 @@ export default function CompanyProfile() {
         }));
       }
     } catch (error) {
-      console.error(error);
-      alert('저장 실패: 데이터 형식이 맞지 않거나 서버 연결이 불안정합니다.\n' + (error.message || ''));
+      console.error("저장 오류 상세:", error);
+      alert(`저장 실패: ${error.message || '서버 에러'}\n(F12를 눌러 콘솔 창의 빨간색 에러 메시지를 확인해 주세요)`);
     } finally {
-      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }
@@ -185,7 +175,7 @@ export default function CompanyProfile() {
           className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-105 transition-all disabled:opacity-50 shrink-0"
         >
           {isLoading ? <Clock className="animate-spin" size={20} /> : <Save size={20} />} 
-          {isLoading ? '저장 중...' : '정보 저장하기'}
+          {isLoading ? '저장 중 (이미지 용량에 따라 수 초 소요)...' : '정보 저장하기'}
         </button>
       </div>
 
@@ -232,7 +222,6 @@ export default function CompanyProfile() {
             </div>
           </div>
 
-          {/* 💡 정산 계좌 정보 신규 추가 영역 */}
           <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
             <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
               <CreditCard className="text-blue-600" size={20} /> 정산 계좌 정보
@@ -241,15 +230,16 @@ export default function CompanyProfile() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
               <div className="space-y-1.5 md:space-y-2">
                 <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">금융기관(은행명)</label>
+                {/* 💡 bank_name 으로 복구 */}
                 <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="예: 기업은행" value={formData.bank_name || ''} onChange={e => setFormData({...formData, bank_name: e.target.value})} />
               </div>
-              <div className="space-y-1.5 md:space-y-2">
-                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">계좌번호</label>
-                <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="계좌번호 ( - 제외)" value={formData.account_number || ''} onChange={e => setFormData({...formData, account_number: e.target.value})} />
-              </div>
-              <div className="space-y-1.5 md:space-y-2">
+              <div className="space-y-1.5 md:space-y-2 md:col-span-1">
                 <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">예금주</label>
                 <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="예금주명" value={formData.account_holder || ''} onChange={e => setFormData({...formData, account_holder: e.target.value})} />
+              </div>
+              <div className="space-y-1.5 md:space-y-2 md:col-span-3">
+                <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">계좌번호</label>
+                <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="계좌번호 ( - 제외)" value={formData.account_number || ''} onChange={e => setFormData({...formData, account_number: e.target.value})} />
               </div>
             </div>
           </div>
