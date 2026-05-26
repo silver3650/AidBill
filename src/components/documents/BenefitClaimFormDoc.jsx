@@ -60,14 +60,71 @@ export default function BenefitClaimFormDoc({ data }) {
 
   if (!data) return <div className="p-10">데이터 로딩 중...</div>;
 
-  // 2. 전달받은 실데이터와 더미 데이터를 깊은 병합
   const activeData = data || {};
-  const customer = { ...dummyData.customer, ...(activeData.customer || {}) };
-  const company = { ...dummyData.company, ...(activeData.company || {}) };
-  const product = { ...dummyData.product, ...(activeData.product || {}) };
-  const account = { ...dummyData.account, ...(activeData.account || {}) };
-  const claimant = { ...dummyData.claimant, ...(activeData.claimant || {}) };
-  const signatures = { ...dummyData.signatures, ...(activeData.signatures || {}) };
+
+  // 💡 데이터 매핑 오류 수정: DB의 원본 키(company_name 등)를 서식 키(name)로 번역하여 매핑
+  const customerData = activeData.customer || {};
+  const customer = {
+    name: customerData.name || dummyData.customer.name,
+    resident_number: customerData.resident_number || dummyData.customer.resident_number,
+    phone: customerData.phone || dummyData.customer.phone,
+    mobile: customerData.mobile || customerData.phone || dummyData.customer.mobile,
+    disability_type: customerData.disability_type || dummyData.customer.disability_type,
+    disability_level: customerData.disability_level || dummyData.customer.disability_level,
+    discount_type: customerData.discount_type || dummyData.customer.discount_type,
+    qualification: customerData.qualification || dummyData.customer.qualification
+  };
+
+  const compData = activeData.company || {};
+  const company = {
+    name: compData.company_name || dummyData.company.name,
+    representative: compData.representative_name || dummyData.company.representative,
+    business_number: compData.business_number || dummyData.company.business_number,
+    phone: compData.contact_number || dummyData.company.phone,
+    mobile: compData.contact_number || dummyData.company.mobile,
+    address: `${compData.address || ''} ${compData.detail_address || ''}`.trim() || dummyData.company.address,
+    bank: compData.bank_name || compData.bank || dummyData.company.bank,
+    account_number: compData.account_number || dummyData.company.account_number,
+    account_holder: compData.account_holder || dummyData.company.account_holder,
+  };
+
+  const prodData = activeData.product || {};
+  const product = {
+    name: prodData.name || dummyData.product.name,
+    purchase_date: activeData.purchase_date || prodData.purchase_date || dummyData.product.purchase_date,
+    model: prodData.model || dummyData.product.model,
+    manufacturer: prodData.manufacturer || dummyData.product.manufacturer,
+    mfg_date: activeData.mfg_date || prodData.mfg_date || dummyData.product.mfg_date,
+    serial_no: prodData.serial_no || dummyData.product.serial_no,
+    std_code: prodData.std_code || dummyData.product.std_code,
+    base_price: prodData.base_price || prodData.price || dummyData.product.base_price,
+    notice_price: prodData.notice_price || prodData.price || dummyData.product.notice_price,
+    actual_price: activeData.total_amount || dummyData.product.actual_price,
+  };
+
+  const accountData = activeData.account || {};
+  const account = {
+    bank: accountData.bank || dummyData.account.bank,
+    account_number: accountData.account_number || dummyData.account.account_number,
+    holder: accountData.holder || dummyData.account.holder
+  };
+
+  const claimantData = activeData.claimant || {};
+  const claimant = {
+    name: claimantData.name || dummyData.claimant.name,
+    resident_number: claimantData.resident_number || dummyData.claimant.resident_number,
+    relation: claimantData.relation || dummyData.claimant.relation,
+    phone: claimantData.phone || dummyData.claimant.phone,
+    mobile: claimantData.mobile || dummyData.claimant.mobile
+  };
+
+  const sigData = activeData.signatures || {};
+  const signatures = {
+    claimant_sign: sigData.claimant_sign || dummyData.signatures.claimant_sign,
+    customer_sign: sigData.customer_sign || dummyData.signatures.customer_sign,
+    company_seal: sigData.company_seal || dummyData.signatures.company_seal
+  };
+
   const claim_date = activeData.claim_date || dummyData.claim_date;
   
   // 💡 청구 주체 3단계 분류
@@ -85,7 +142,7 @@ export default function BenefitClaimFormDoc({ data }) {
   if (isCompanyClaim) {
     displayBank = company?.bank;
     displayAccountNum = company?.account_number;
-    displayHolder = company?.name;
+    displayHolder = company?.account_holder || company?.name;
     displayIdNum = company?.business_number;
   } else if (isFamilyClaim) {
     displayBank = account?.bank;
@@ -97,6 +154,33 @@ export default function BenefitClaimFormDoc({ data }) {
     displayAccountNum = account?.account_number;
     displayHolder = account?.holder || customer?.name;
     displayIdNum = customer?.resident_number;
+  }
+
+  // 💡 ⑪ 하단 청구인 서명란 동적 매핑
+  let finalClaimantName = '';
+  let finalClaimantSign = null;
+  let finalClaimantRRN = '';
+  let finalClaimantRel = '';
+  let finalClaimantPhone = '';
+
+  if (isCompanyClaim) {
+    finalClaimantName = company?.name;
+    finalClaimantSign = signatures?.company_seal; // 직인 삽입
+    finalClaimantRRN = company?.business_number;
+    finalClaimantRel = '판매업자';
+    finalClaimantPhone = company?.phone || company?.mobile;
+  } else if (isFamilyClaim) {
+    finalClaimantName = claimant?.name;
+    finalClaimantSign = signatures?.claimant_sign; // 가족 서명 삽입
+    finalClaimantRRN = claimant?.resident_number;
+    finalClaimantRel = claimant?.relation;
+    finalClaimantPhone = claimant?.mobile || claimant?.phone;
+  } else {
+    finalClaimantName = customer?.name;
+    finalClaimantSign = signatures?.customer_sign; // 수급자(본인) 서명 삽입
+    finalClaimantRRN = customer?.resident_number;
+    finalClaimantRel = '본인';
+    finalClaimantPhone = customer?.mobile || customer?.phone;
   }
 
   // 💡 ⑧, ⑨ 금액 자동 계산 로직 (건강보험 대상자일 경우)
@@ -156,13 +240,11 @@ export default function BenefitClaimFormDoc({ data }) {
             <TableCell className="font-bold text-left px-2 border-r-0 w-[60px]">접수일</TableCell>
             <TableCell className="border-l-0 w-auto"></TableCell>
             <TableCell className="font-bold text-left border-r-0 w-[60px]">처리기간</TableCell>
-            {/* 💡 요청: 처리기간 7일 배경색 어둡게 */}
             <TableCell className="text-left border-l-0 w-[100px] bg-slate-200">7일</TableCell>
           </tr>
           <tr>
             <TableCell className="w-[16%] font-bold leading-tight py-1 bg-slate-200">본인부담액<br/>경감 대상자</TableCell>
             <TableCell colSpan="5" className="text-left px-4 leading-tight bg-slate-200 py-1">
-              {/* 💡 요청: 경감대상자 우측 아무것도 선택하지 않음 */}
               [ <CheckBox checked={false} /> ] 「국민건강보험법 시행령」 별표 2 제3호라목1)에 해당하는 사람<br/>
               [ <CheckBox checked={false} /> ] 「국민건강보험법 시행령」 별표 2 제3호라목2)에 해당하는 사람
             </TableCell>
@@ -232,7 +314,6 @@ export default function BenefitClaimFormDoc({ data }) {
             <TableCell rowSpan="4" className="w-[16%] font-bold bg-slate-100 leading-snug">③ 급여를 받을<br/>사람 외 청구인</TableCell>
             <TableCell rowSpan="2" className="w-[6%] bg-slate-100 font-bold px-0">가족</TableCell>
             <TableCell className="bg-slate-100 font-bold w-[9%]">성명</TableCell>
-            {/* 💡 요청: 개인(가족) 선택 시에만 입력 */}
             <TableCell className="w-[15%]">{isFamilyClaim ? claimant?.name : ''}</TableCell>
             <TableCell className="bg-slate-100 font-bold w-[12%]">주민등록번호</TableCell>
             <TableCell className="w-[15%]">{isFamilyClaim ? claimant?.resident_number : ''}</TableCell>
@@ -247,7 +328,6 @@ export default function BenefitClaimFormDoc({ data }) {
           <tr>
             <TableCell rowSpan="2" className="bg-slate-100 font-bold leading-tight px-0">판매<br/>업자</TableCell>
             <TableCell className="bg-slate-100 font-bold">상호</TableCell>
-            {/* 💡 요청: 기업(업체) 선택 시에만 입력 */}
             <TableCell>{isCompanyClaim ? company?.name : ''}</TableCell>
             <TableCell className="bg-slate-100 font-bold">사업자등록번호</TableCell>
             <TableCell>{isCompanyClaim ? company?.business_number : ''}</TableCell>
@@ -308,7 +388,6 @@ export default function BenefitClaimFormDoc({ data }) {
             <TableCell className="text-right px-2">{product?.base_price ? `${product.base_price} 원` : ''}</TableCell>
             <TableCell className="text-right px-2">{product?.notice_price ? `${product.notice_price} 원` : ''}</TableCell>
             <TableCell className="text-right px-2">{product?.actual_price ? `${product.actual_price} 원` : ''}</TableCell>
-            {/* 💡 요청: 동적 계산된 값 반영 */}
             <TableCell className="text-right px-2">{displaySelfBurden}</TableCell>
             <TableCell className="text-right px-2">{displayClaimAmount}</TableCell>
           </tr>
@@ -362,25 +441,25 @@ export default function BenefitClaimFormDoc({ data }) {
           <div className="flex items-center justify-end whitespace-nowrap mb-1.5">
             <span className="font-bold mr-3">⑪ 청구인</span>
             <span className="relative mr-2 font-medium">
-              {isFamilyClaim ? claimant?.name : customer?.name}
+              {finalClaimantName}
             </span>
             <span className="relative flex items-center justify-center mr-8 font-medium">
-              {signatures?.claimant_sign && (
-                <img src={signatures.claimant_sign} alt="서명" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-10 h-10 mix-blend-multiply z-10 pointer-events-none" />
+              {finalClaimantSign && (
+                <img src={finalClaimantSign} alt="서명/직인" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 mix-blend-multiply z-10 pointer-events-none" />
               )}
               <span>(서명 또는 인)</span>
             </span>
-            <span className="font-bold mr-3">주민등록번호</span>
+            <span className="font-bold mr-3">주민등록번호 또는 사업자등록번호</span>
             <span className="font-medium">
-              {isFamilyClaim ? claimant?.resident_number : customer?.resident_number}
+              {finalClaimantRRN}
             </span>
           </div>
           
           <div className="flex items-center justify-end whitespace-nowrap mt-1">
             <span className="font-bold mr-3">급여를 받을 사람과의 관계</span>
-            <span className="mr-8 font-medium">{isFamilyClaim ? claimant?.relation : '본인'}</span>
+            <span className="mr-8 font-medium">{finalClaimantRel}</span>
             <span className="font-bold mr-3">(휴대)전화번호</span>
-            <span className="font-medium">{isFamilyClaim ? claimant?.mobile : customer?.mobile}</span>
+            <span className="font-medium">{finalClaimantPhone}</span>
           </div>
         </div>
 
