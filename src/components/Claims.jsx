@@ -15,18 +15,19 @@ import ReceiptDoc from '../components/documents/ReceiptDoc';
 import EstimateDoc from '../components/documents/EstimateDoc';
 import TransactionDoc from '../components/documents/TransactionDoc';
 import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc';
+import Contracts from '../components/documents/Contracts'; 
 
-// 💡 스마트 전자 서명 패드 컴포넌트
+// 스마트 전자 서명 패드 컴포넌트
 const SignaturePad = ({ onSave }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
     const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = '#000000'; // 서명 색상 (검정)
-    ctx.lineWidth = 3;         // 펜 굵기
-    ctx.lineCap = 'round';     // 선 끝을 둥글게
-    ctx.lineJoin = 'round';    // 선 꺾임 부드럽게
+    ctx.strokeStyle = '#000000'; 
+    ctx.lineWidth = 3;         
+    ctx.lineCap = 'round';     
+    ctx.lineJoin = 'round';    
   }, []);
 
   const getCoordinates = (e) => {
@@ -34,14 +35,9 @@ const SignaturePad = ({ onSave }) => {
     const rect = canvas.getBoundingClientRect();
     const clientX = e.clientX || (e.touches && e.touches[0].clientX);
     const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-    
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
-    };
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
   };
 
   const startDrawing = (e) => {
@@ -80,23 +76,12 @@ const SignaturePad = ({ onSave }) => {
         width={400} 
         height={120} 
         className="w-full h-24 touch-none cursor-crosshair bg-white"
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={stopDrawing}
+        onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}
+        onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing}
       />
       <div className="flex justify-between items-center p-1.5 bg-gray-100 border-t border-gray-200 shrink-0">
         <span className="text-[10px] text-gray-500 font-bold ml-2 flex items-center gap-1"><PenTool size={12}/> 빈 공간에 드래그하여 서명하세요.</span>
-        <button 
-          type="button" 
-          onClick={clearCanvas} 
-          className="text-[11px] bg-white border border-gray-300 text-gray-700 font-bold px-3 py-1 rounded hover:bg-gray-50 flex items-center gap-1 shadow-sm transition-colors"
-        >
-           다시 쓰기 (지우기)
-        </button>
+        <button type="button" onClick={clearCanvas} className="text-[11px] bg-white border border-gray-300 text-gray-700 font-bold px-3 py-1 rounded hover:bg-gray-50 flex items-center gap-1 shadow-sm transition-colors">다시 쓰기 (지우기)</button>
       </div>
     </div>
   );
@@ -140,51 +125,45 @@ export default function Claims() {
 
   const [activeModal, setActiveModal] = useState(null); 
   const [selectedClaim, setSelectedClaim] = useState(null);
-  
   const [claimSubject, setClaimSubject] = useState('기업 (업체 위탁 청구)');
 
   const [docInputs, setDocInputs] = useState({
     bank: '', account_number: '', holder: '',
-    claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '',
-    claimant_sign: '' 
+    claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '', claimant_sign: '' 
   });
 
-  const [newData, setNewData] = useState({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '' });
-  const [editData, setEditData] = useState({ claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', notes: '', purchase_date: '', mfg_date: '' });
+  const [newData, setNewData] = useState({ 
+    customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], 
+    total_amount: 0, purchase_date: '', mfg_date: '', 
+    item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
+  });
+  
+  const [editData, setEditData] = useState({ 
+    claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
+    notes: '', purchase_date: '', mfg_date: '', 
+    item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
+  });
+  
   const [photoFiles, setPhotoFiles] = useState([]); 
-
   const [emailData, setEmailData] = useState({ recipient: '', sender: '', subject: '', content: '', files: {} });
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isDocPreview, setIsDocPreview] = useState(false); 
 
   const [printFiles, setPrintFiles] = useState({});
   const [isPrintDocPreview, setIsPrintDocPreview] = useState(false);
-
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [companyInfo, setCompanyInfo] = useState({
     company_name: '', representative_name: '', representative_birth: '',
     address: '', detail_address: '', zip_code: '', email: '', contact_number: '',
-    seal_image: null, biz_reg_image: null, bankbook_image: null,
-    qualifying_docs: [] 
+    seal_image: null, biz_reg_image: null, bankbook_image: null, qualifying_docs: [] 
   });
 
   const pdfContainerRef = useRef(null);
 
-  const LOCAL_GOV_DOCS = [
-    '교부비용청구서', '교부확인서', '사업자등록증', '계좌사본', 
-    '물품인수증', '견적서', '거래명세서', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
-  ];
-
-  const NHIS_PERSONAL_DOCS = [
-    '보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', 
-    '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)'
-  ];
-
-  const NHIS_COMPANY_DOCS = [
-    '보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', 
-    '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)', '위임장', '교부(판매)업체 자격사항 서류'
-  ];
+  const LOCAL_GOV_DOCS = ['교부비용청구서', '교부확인서', '사업자등록증', '계좌사본', '물품인수증', '견적서', '거래명세서', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'];
+  const NHIS_PERSONAL_DOCS = ['보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)'];
+  const NHIS_COMPANY_DOCS = ['보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)', '위임장', '교부(판매)업체 자격사항 서류'];
 
   const isInspectionExempt = (product) => {
     if (!product) return false;
@@ -201,32 +180,25 @@ export default function Claims() {
     } else {
       docs = [...LOCAL_GOV_DOCS];
     }
-
-    if (isInspectionExempt(claim?.products)) {
-      docs = docs.filter(doc => doc !== '검수확인서');
-    }
+    if (isInspectionExempt(claim?.products)) docs = docs.filter(doc => doc !== '검수확인서');
     return docs;
   };
 
   const documentComponents = {
     '교부비용청구서': ClaimFormDoc, '교부확인서': ConfirmationDoc, 
     '물품인수증': ReceiptDoc, '견적서': EstimateDoc, '거래명세서': TransactionDoc, 
-    '보조기기 급여 지급청구서': BenefitClaimFormDoc
+    '보조기기 급여 지급청구서': BenefitClaimFormDoc, '보청기 구매 표준계약서': Contracts 
   };
 
-  const STATUS_STAGES = [
-    '대기 중', '배송 중', '교부 완료', '청구 완료 (계산서 미발행)', '청구 완료 (계산서 발행)', '정산 완료'
-  ];
+  const STATUS_STAGES = ['대기 중', '배송 중', '교부 완료', '청구 완료 (계산서 미발행)', '청구 완료 (계산서 발행)', '정산 완료'];
 
   useEffect(() => {
     async function initialize() {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error || !user) return;
-      
       await fetchCompanyData(user.id);
       await fetchData(user.id);
     }
-    
     initialize();
 
     const script = document.createElement('script');
@@ -238,21 +210,12 @@ export default function Claims() {
 
   useEffect(() => {
     if (location.state?.autoOpenCreate && location.state?.customerId) {
-      const passedId = location.state.customerId;
-      const passedName = location.state.customerName || '';
-      
       setNewData(prev => ({
-        ...prev,
-        customer_id: passedId,
-        product_id: '',
-        claim_date: new Date().toISOString().split('T')[0],
-        total_amount: 0,
-        purchase_date: '',
-        mfg_date: ''
+        ...prev, customer_id: location.state.customerId, product_id: '', claim_date: new Date().toISOString().split('T')[0],
+        total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general',
+        hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
       }));
-      
-      setCustSearchTerm(passedName); 
-      setProdSearchTerm('');
+      setCustSearchTerm(location.state.customerName || ''); setProdSearchTerm('');
       setActiveModal('create');     
       window.history.replaceState({}, document.title);
     }
@@ -276,8 +239,7 @@ export default function Claims() {
       const { data: nhisData } = await supabase.from('nhis_branches').select('*');
       const { data: deviceData } = await supabase.from('devices').select('*').order('name');
 
-      setAllCustomers(custData || []);
-      setAllDevices(deviceData || []);
+      setAllCustomers(custData || []); setAllDevices(deviceData || []);
 
       const merged = claimData?.map(h => {
         let customerObj = custData?.find(c => String(c.id) === String(h.customer_id));
@@ -286,50 +248,51 @@ export default function Claims() {
         if (customerObj) {
           let fullRrn = customerObj.resident_number;
           if (customerObj.resident_number_front) {
-            fullRrn = customerObj.resident_number_back
-              ? `${customerObj.resident_number_front}-${customerObj.resident_number_back}`
-              : `${customerObj.resident_number_front}`;
+            fullRrn = customerObj.resident_number_back ? `${customerObj.resident_number_front}-${customerObj.resident_number_back}` : `${customerObj.resident_number_front}`;
           }
-
           customerWithGov = {
-            ...customerObj,
-            resident_number: fullRrn,
+            ...customerObj, resident_number: fullRrn,
             local_governments: govData?.find(g => String(g.id) === String(customerObj.local_gov_id)) || null,
             nhis_branches: nhisData?.find(n => String(n.id) === String(customerObj.nhis_branch_id)) || null
           };
         }
 
         const matchedDevice = deviceData?.find(d => String(d.id) === String(h.product_id) || String(d.id) === String(h.device_id));
+        
+        let parsedHearing = h.hearing_aid_details;
+        if (typeof parsedHearing === 'string') { try { parsedHearing = JSON.parse(parsedHearing); } catch(e) { parsedHearing = null; } }
 
         let fullProductName = h.product_name || h.item_name || h.device_name || '품목 미지정';
-        if (matchedDevice) {
-          fullProductName = matchedDevice.category ? `${matchedDevice.category} - ${matchedDevice.name}` : matchedDevice.name;
+        
+        if (h.item_type === 'hearing_aid' && parsedHearing) {
+          const parts = [];
+          if (parsedHearing.right?.enabled && parsedHearing.right?.product_id) {
+            const rDev = deviceData?.find(d => String(d.id) === String(parsedHearing.right.product_id));
+            parts.push(`우: ${rDev?.name || '모델미정'}`);
+          }
+          if (parsedHearing.left?.enabled && parsedHearing.left?.product_id) {
+            const lDev = deviceData?.find(d => String(d.id) === String(parsedHearing.left.product_id));
+            parts.push(`좌: ${lDev?.name || '모델미정'}`);
+          }
+          fullProductName = parts.length > 0 ? `보청기 (${parts.join(' / ')})` : '보청기 (선택없음)';
+        } else if (matchedDevice) {
+          fullProductName = matchedDevice.category ? `[${matchedDevice.category}] ${matchedDevice.name}` : matchedDevice.name;
         } else if (h.manual_product_name) {
           fullProductName = h.manual_product_name;
         }
 
         let parsedPhotos = [];
-        if (typeof h.receipt_photos === 'string') {
-          try { parsedPhotos = JSON.parse(h.receipt_photos); } catch(e) {}
-        } else if (Array.isArray(h.receipt_photos)) {
-          parsedPhotos = h.receipt_photos;
-        }
+        if (typeof h.receipt_photos === 'string') { try { parsedPhotos = JSON.parse(h.receipt_photos); } catch(e) {} } 
+        else if (Array.isArray(h.receipt_photos)) parsedPhotos = h.receipt_photos;
 
         let mappedStatus = h.status || '대기 중';
         if (mappedStatus === '지급 완료') mappedStatus = '정산 완료';
         else if (mappedStatus === '청구 완료') mappedStatus = '청구 완료 (계산서 미발행)'; 
 
         return {
-          ...h,
-          customers: customerWithGov,
-          products: { 
-            ...matchedDevice, 
-            name: fullProductName,
-            purchase_date: h.purchase_date || matchedDevice?.purchase_date || '',
-            mfg_date: h.mfg_date || matchedDevice?.mfg_date || ''
-          },
-          status: mappedStatus,
-          receipt_photos: parsedPhotos 
+          ...h, customers: customerWithGov, hearing_aid_details: parsedHearing,
+          products: { ...matchedDevice, name: fullProductName, purchase_date: h.purchase_date || matchedDevice?.purchase_date || '', mfg_date: h.mfg_date || matchedDevice?.mfg_date || '' },
+          status: mappedStatus, receipt_photos: parsedPhotos 
         };
       });
       setClaims(merged || []);
@@ -339,7 +302,6 @@ export default function Claims() {
   useEffect(() => {
     let result = [...claims];
     const term = searchTerm.toLowerCase();
-    
     if (term) {
       result = result.filter(h => 
         (h.customers?.name?.toLowerCase() || '').includes(term) || 
@@ -352,8 +314,7 @@ export default function Claims() {
     
     if (groupByCustomer) {
       result.sort((a, b) => {
-        const nameA = a.customers?.name || '';
-        const nameB = b.customers?.name || '';
+        const nameA = a.customers?.name || ''; const nameB = b.customers?.name || '';
         if (nameA !== nameB) return nameA.localeCompare(nameB, 'ko');
         return new Date(b.claim_date) - new Date(a.claim_date);
       });
@@ -383,37 +344,19 @@ export default function Claims() {
   const formatShortDate = (dateStr) => {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
-    const yy = String(d.getFullYear()).slice(2);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yy}.${mm}.${dd}`;
+    return `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
   };
 
   const setQuickDate = (type) => {
-    const getFormattedDate = (dateObj) => {
-      const year = dateObj.getFullYear();
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(dateObj.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    const today = new Date();
-    const end = getFormattedDate(today);
-    let start = '';
-
+    const getFormattedDate = (dateObj) => `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+    const today = new Date(); const end = getFormattedDate(today); let start = '';
     if (type === 'today') { start = end; } 
     else if (type === 'week') { const d = new Date(); d.setDate(d.getDate() - 7); start = getFormattedDate(d); } 
     else if (type === 'month') { const d = new Date(); d.setMonth(d.getMonth() - 1); start = getFormattedDate(d); }
-
     setDateRange({ start, end });
   };
 
-  const resetFilters = () => { 
-    setSearchTerm(''); 
-    setDateRange({ start: '', end: '' }); 
-    setStatusFilter('전체'); 
-    setGroupByCustomer(false); 
-  };
+  const resetFilters = () => { setSearchTerm(''); setDateRange({ start: '', end: '' }); setStatusFilter('전체'); setGroupByCustomer(false); };
 
   const handleDelete = async (id) => {
     if (window.confirm('이 청구 내역을 영구 삭제하시겠습니까?')) {
@@ -424,36 +367,73 @@ export default function Claims() {
     }
   };
 
+  // 💡 좌/우 보청기 상태 관리 핸들러
+  const handleHearingAidChange = (target, ear, field, value) => {
+    const updateFn = target === 'newData' ? setNewData : setEditData;
+    updateFn(prev => {
+      const updated = {
+        ...prev,
+        hearing_aid_details: {
+          ...(prev.hearing_aid_details || {}),
+          [ear]: { ...(prev.hearing_aid_details?.[ear] || {}), [field]: value }
+        }
+      };
+      
+      if (field === 'product_id') {
+        const matched = allDevices.find(d => String(d.id) === String(value));
+        if (matched) updated.hearing_aid_details[ear].price = matched.price || 0;
+      }
+      
+      if (updated.item_type === 'hearing_aid') {
+         const r = updated.hearing_aid_details.right?.enabled ? parseInt(updated.hearing_aid_details.right.price || 0) : 0;
+         const l = updated.hearing_aid_details.left?.enabled ? parseInt(updated.hearing_aid_details.left.price || 0) : 0;
+         updated.total_amount = r + l;
+      }
+      return updated;
+    });
+  };
+
   const handleCreateSubmit = async () => {
-    if (!newData.customer_id || !newData.product_id) { 
-      alert('대상자와 교부할 상품을 모두 선택해 주세요.'); 
-      return; 
+    if (!newData.customer_id) { alert('대상자를 선택해 주세요.'); return; }
+    if (newData.item_type === 'general' && !newData.product_id) { alert('일반 상품을 선택해 주세요.'); return; }
+    if (newData.item_type === 'hearing_aid' && !newData.hearing_aid_details.right.enabled && !newData.hearing_aid_details.left.enabled) {
+      alert('보청기 좌/우 중 최소 1개 이상을 선택해 주세요.'); return;
     }
 
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) { alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.'); return; }
+    if (userError || !user) { alert('로그인 세션이 만료되었습니다.'); return; }
 
     const selectedCustomer = allCustomers.find(c => String(c.id) === String(newData.customer_id));
     const isNHIS = selectedCustomer && (selectedCustomer.qualification === '건강보험' || selectedCustomer.qualification === '경감(건강보험)');
 
-    const { error } = await supabase.from('claims').insert([{
+    let primaryProductId = newData.product_id;
+    if (newData.item_type === 'hearing_aid') {
+      const hData = newData.hearing_aid_details;
+      if (hData.right.enabled && hData.right.product_id) primaryProductId = hData.right.product_id;
+      else if (hData.left.enabled && hData.left.product_id) primaryProductId = hData.left.product_id;
+    }
+
+    const payload = {
       customer_id: newData.customer_id, 
-      product_id: newData.product_id,
+      product_id: primaryProductId || null,
       claim_date: newData.claim_date, 
       total_amount: parseInt(newData.total_amount) || 0, 
       purchase_date: newData.purchase_date || null,
       mfg_date: newData.mfg_date || null,
       status: '대기 중',
       claim_type: isNHIS ? '공단' : '지자체',
-      company_id: user.id
-    }]);
+      company_id: user.id,
+      item_type: newData.item_type,
+      hearing_aid_details: newData.item_type === 'hearing_aid' ? newData.hearing_aid_details : null
+    };
+
+    const { error } = await supabase.from('claims').insert([payload]);
 
     if (!error) {
       alert('접수 완료되었습니다.'); 
       setActiveModal(null);
-      setNewData({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '' });
-      setCustSearchTerm('');
-      setProdSearchTerm('');
+      setNewData({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }});
+      setCustSearchTerm(''); setProdSearchTerm('');
       fetchData(user.id);
     } else {
       alert('접수 실패: ' + error.message);
@@ -462,29 +442,26 @@ export default function Claims() {
 
   const openProductAssignmentModal = (claim) => {
     setNewData({
-      customer_id: claim.customer_id || '',
-      product_id: '',
-      claim_date: new Date().toISOString().split('T')[0],
-      total_amount: 0,
-      purchase_date: '',
-      mfg_date: ''
+      customer_id: claim.customer_id || '', product_id: '', claim_date: new Date().toISOString().split('T')[0],
+      total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general',
+      hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
     });
-    setCustSearchTerm(claim.customers?.name || '');
-    setProdSearchTerm('');
+    setCustSearchTerm(claim.customers?.name || ''); setProdSearchTerm('');
     setActiveModal('create');
   };
 
   const openEditModal = (claim) => {
     setSelectedClaim(claim);
+    let parsedHearing = claim.hearing_aid_details;
+    if(typeof parsedHearing === 'string') { try { parsedHearing = JSON.parse(parsedHearing); } catch(e) { parsedHearing = null; } }
+
     setEditData({
-      claim_date: claim.claim_date || '',
-      total_amount: claim.total_amount || 0,
-      status: claim.status || '대기 중',
-      carrier: claim.carrier || 'CJ대한통운',
-      tracking_no: claim.tracking_no || '',
-      notes: claim.notes || '',
-      purchase_date: claim.purchase_date || '',
-      mfg_date: claim.mfg_date || ''
+      claim_date: claim.claim_date || '', total_amount: claim.total_amount || 0,
+      status: claim.status || '대기 중', carrier: claim.carrier || 'CJ대한통운',
+      tracking_no: claim.tracking_no || '', notes: claim.notes || '',
+      purchase_date: claim.purchase_date || '', mfg_date: claim.mfg_date || '',
+      item_type: claim.item_type || 'general',
+      hearing_aid_details: parsedHearing || { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
     });
     setPhotoFiles(claim.receipt_photos || []);
     setActiveModal('edit');
@@ -492,25 +469,19 @@ export default function Claims() {
 
   const handlePhotoFilesChange = async (e) => {
     const files = Array.from(e.target.files);
-    if (photoFiles.length + files.length > 3) {
-      alert('사진은 최대 3장까지만 추가할 수 있습니다.'); return;
-    }
+    if (photoFiles.length + files.length > 3) { alert('사진은 최대 3장까지만 추가할 수 있습니다.'); return; }
     const compressImage = (file) => {
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (event) => {
-          const img = new Image();
-          img.src = event.target.result;
+          const img = new Image(); img.src = event.target.result;
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 600; 
-            let scaleSize = 1;
+            const MAX_WIDTH = 600; let scaleSize = 1;
             if (img.width > MAX_WIDTH) { scaleSize = MAX_WIDTH / img.width; }
-            canvas.width = img.width * scaleSize;
-            canvas.height = img.height * scaleSize;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.width = img.width * scaleSize; canvas.height = img.height * scaleSize;
+            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             resolve(canvas.toDataURL('image/jpeg', 0.5)); 
           };
         };
@@ -520,25 +491,29 @@ export default function Claims() {
     try {
       const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
       setPhotoFiles(prev => [...prev, ...compressedFiles].slice(0, 3));
-    } catch (err) {
-      alert('사진을 처리하는 중 오류가 발생했습니다.');
-    }
+    } catch (err) { alert('사진을 처리하는 중 오류가 발생했습니다.'); }
   };
 
   const handleEditSubmit = async () => {
     let newStatus = editData.status;
-    if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) {
-      newStatus = '교부 완료';
-    } else if (editData.tracking_no && newStatus === '대기 중') {
-      newStatus = '배송 중';
-    }
+    if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) newStatus = '교부 완료';
+    else if (editData.tracking_no && newStatus === '대기 중') newStatus = '배송 중';
+    
     const payload = {
       claim_date: editData.claim_date, total_amount: parseInt(editData.total_amount) || 0,
       status: newStatus, carrier: editData.carrier, tracking_no: editData.tracking_no,
       receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
       notes: editData.notes || '', purchase_date: editData.purchase_date || null,
-      mfg_date: editData.mfg_date || null
+      mfg_date: editData.mfg_date || null,
+      item_type: editData.item_type,
+      hearing_aid_details: editData.item_type === 'hearing_aid' ? editData.hearing_aid_details : null
     };
+
+    if (editData.item_type === 'hearing_aid') {
+      const hData = editData.hearing_aid_details;
+      if (hData.right?.enabled && hData.right?.product_id) payload.product_id = hData.right.product_id;
+      else if (hData.left?.enabled && hData.left?.product_id) payload.product_id = hData.left.product_id;
+    }
 
     try {
       const { error } = await supabase.from('claims').update(payload).eq('id', selectedClaim.id);
@@ -553,10 +528,10 @@ export default function Claims() {
   };
 
   const handleTaxInvoiceConfirm = async (id) => {
-    if (window.confirm('홈택스 등 외부 정산 허브를 통한 세금계산서 발행 처리가 완료되었습니까?\n확인 클릭 시 앱 내 상급 파이프라인 단계로 즉시 승인 연동됩니다.')) {
+    if (window.confirm('홈택스 등 외부 정산 허브를 통한 세금계산서 발행 처리가 완료되었습니까?')) {
       const { error } = await supabase.from('claims').update({ status: '청구 완료 (계산서 발행)' }).eq('id', id);
       if (!error) {
-        alert('세금계산서 정산 연동 프로세스가 승인되었습니다.');
+        alert('승인되었습니다.');
         const { data: { user } } = await supabase.auth.getUser();
         if (user) fetchData(user.id);
       } else { alert('DB 상태 변경 중 에러가 발생했습니다.'); }
@@ -564,13 +539,13 @@ export default function Claims() {
   };
 
   const handleSettlementConfirm = async (id) => {
-    if (window.confirm('지자체가 당사 계좌로 실제 대금을 입금한 사실을 확인하셨습니까?\n확인 클릭 시 최종 [정산 완료] 상태로 수동 변경 처리됩니다.')) {
+    if (window.confirm('지자체가 당사 계좌로 실제 대금을 입금한 사실을 확인하셨습니까?')) {
       const { error } = await supabase.from('claims').update({ status: '정산 완료' }).eq('id', id);
       if (!error) {
-        alert('대상자 정산 처리가 수동 입금 매핑을 통해 최종 완료로 마감되었습니다.');
+        alert('최종 완료로 마감되었습니다.');
         const { data: { user } } = await supabase.auth.getUser();
         if (user) fetchData(user.id);
-      } else { alert('DB 상태 변경 중 오류가 발생했습니다.'); }
+      } else { alert('오류가 발생했습니다.'); }
     }
   };
 
@@ -585,12 +560,7 @@ export default function Claims() {
     }
 
     const gov = claim?.customers?.local_governments;
-    const legacyMap = {
-      'cost_claim': '교부비용청구서', 'delivery_confirm': '교부확인서',
-      'biz_reg': '사업자등록증', 'bankbook': '계좌사본',
-      'receipt': '물품인수증', 'estimate': '견적서', 'invoice': '거래명세서',
-      'customer_id_card': '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
-    };
+    const legacyMap = { 'cost_claim': '교부비용청구서', 'delivery_confirm': '교부확인서', 'biz_reg': '사업자등록증', 'bankbook': '계좌사본', 'receipt': '물품인수증', 'estimate': '견적서', 'invoice': '거래명세서', 'customer_id_card': '기타 첨부(교부사진, 배송추적 캡쳐본 등)' };
     let reqDocs = [];
     if (gov?.required_documents) {
       if (typeof gov.required_documents === 'string') {
@@ -600,11 +570,8 @@ export default function Claims() {
     const normalizedReqDocs = reqDocs.map(doc => legacyMap[doc] || doc);
 
     docsList.forEach(docName => {
-      if (normalizedReqDocs && normalizedReqDocs.length > 0) {
-        initialFiles[docName] = normalizedReqDocs.includes(docName);
-      } else {
-        initialFiles[docName] = true;
-      }
+      if (normalizedReqDocs && normalizedReqDocs.length > 0) initialFiles[docName] = normalizedReqDocs.includes(docName);
+      else initialFiles[docName] = true;
     });
     return initialFiles;
   };
@@ -615,26 +582,18 @@ export default function Claims() {
     const options = [];
     if (gov.email) options.push(`${gov.email} (${gov.name}/${gov.manager_name || '대표'})`);
     let managers = [];
-    if (typeof gov.managers === 'string') {
-      try { managers = JSON.parse(gov.managers); } catch(e) {}
-    } else if (Array.isArray(gov.managers)) { managers = gov.managers; }
-    managers.forEach(m => {
-      if (m.email) options.push(`${m.email} (${gov.name}/${m.name || '담당자'})`);
-    });
+    if (typeof gov.managers === 'string') { try { managers = JSON.parse(gov.managers); } catch(e) {} } else if (Array.isArray(gov.managers)) { managers = gov.managers; }
+    managers.forEach(m => { if (m.email) options.push(`${m.email} (${gov.name}/${m.name || '담당자'})`); });
     return [...new Set(options)]; 
   };
 
   const openEmailModal = (claim) => {
-    setSelectedClaim(claim);
-    setIssueDate(new Date().toISOString().split('T')[0]); 
-    setClaimSubject('기업 (업체 위탁 청구)'); 
+    setSelectedClaim(claim); setIssueDate(new Date().toISOString().split('T')[0]); setClaimSubject('기업 (업체 위탁 청구)'); 
     setDocInputs({ bank: '', account_number: '', holder: '', claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '', claimant_sign: '' });
     
     const gov = claim.customers?.local_governments || claim.customers?.nhis_branches || {};
     let managers = [];
-    if (typeof gov.managers === 'string') {
-      try { managers = JSON.parse(gov.managers); } catch(e) {}
-    } else if (Array.isArray(gov.managers)) { managers = gov.managers; }
+    if (typeof gov.managers === 'string') { try { managers = JSON.parse(gov.managers); } catch(e) {} } else if (Array.isArray(gov.managers)) { managers = gov.managers; }
     let defaultRecipient = '';
     if (gov.email) defaultRecipient = `${gov.email} (${gov.name}/${gov.manager_name || '대표'})`;
     else if (managers.length > 0 && managers[0].email) defaultRecipient = `${managers[0].email} (${gov.name}/${managers[0].name || '담당자'})`;
@@ -642,42 +601,32 @@ export default function Claims() {
     const initialFiles = getInitialFilesFromGov(claim, '기업 (업체 위탁 청구)'); 
     const currentCompanyName = companyInfo.company_name || '(주)케어플러스';
     const currentCustomerName = claim.customers?.name || '대상자';
-    const currentContactNumber = companyInfo.contact_number || '1833-6365';
-    const currentEmail = companyInfo.email || '';
 
     setEmailData({ 
       recipient: defaultRecipient, sender: companyInfo.email || '', files: initialFiles,
       subject: `장애인 보조기기 교부 관련 비용청구서 송부의 건(${currentCustomerName})`, 
-      content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n참고로 세금계산서는 본 메일과 별개로 발행되어 발송될 예정입니다.\n\n서류를 검토하신 후 의문 사항이 있으시거나 보완이 필요한 점이 있다면\n아래 담당자 연락처로 언제든지 연락 주시기 바랍니다.\n\n감사합니다.\n\n${currentCompanyName} 담당자 배상\nEmail: ${currentEmail}\nTel: ${currentContactNumber}`
+      content: `안녕하세요.\n장애인 보조기기 교부 전문업체 ${currentCompanyName}입니다.\n\n${currentCustomerName} 대상자님의 보조기기 교부와 관련하여,\n정산에 필요한 비용 청구서 및 관련 서류를 첨부와 같이 제출합니다.\n\n감사합니다.\n\n${currentCompanyName} 담당자 배상`
     });
     setIsDocPreview(false); setActiveModal('email');
   };
 
   const openPrintModal = (claim) => {
-    setSelectedClaim(claim);
-    setIssueDate(new Date().toISOString().split('T')[0]); 
-    setClaimSubject('기업 (업체 위탁 청구)');
+    setSelectedClaim(claim); setIssueDate(new Date().toISOString().split('T')[0]); setClaimSubject('기업 (업체 위탁 청구)');
     setDocInputs({ bank: '', account_number: '', holder: '', claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '', claimant_sign: '' });
-    
-    const initialFiles = getInitialFilesFromGov(claim, '기업 (업체 위탁 청구)');
-    setPrintFiles(initialFiles); 
-    setIsPrintDocPreview(false); 
-    setActiveModal('print');
+    setPrintFiles(getInitialFilesFromGov(claim, '기업 (업체 위탁 청구)')); setIsPrintDocPreview(false); setActiveModal('print');
   };
 
   const handleSubjectChange = (subject, mode = 'print') => {
     setClaimSubject(subject);
     const newFiles = getInitialFilesFromGov(selectedClaim, subject);
-    if (mode === 'print') setPrintFiles(newFiles);
-    else setEmailData({ ...emailData, files: newFiles });
+    if (mode === 'print') setPrintFiles(newFiles); else setEmailData({ ...emailData, files: newFiles });
   };
 
   const handleSendRealEmail = async () => {
     const emailMatch = emailData.recipient.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/);
     if (!emailMatch) { alert('올바른 수신 메일을 입력해 주세요.'); return; }
     
-    const docsList = getDocsListForClaim(selectedClaim, claimSubject);
-    const selectedDocuments = docsList.filter(docName => emailData.files[docName]);
+    const selectedDocuments = getDocsListForClaim(selectedClaim, claimSubject).filter(docName => emailData.files[docName]);
 
     if (window.confirm(`선택 서류 ${selectedDocuments.length}건을 PDF로 변환 및 발송하시겠습니까?`)) {
       setIsSendingEmail(true);
@@ -692,87 +641,50 @@ export default function Claims() {
             const pdf = new jsPDF('p', 'mm', 'a4');
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             const pdfDataUri = pdf.output('datauristring');
-            attachmentsArray.push({ 
-              content: pdfDataUri.split('base64,')[1], 
-              filename: `${element.getAttribute('data-docname')}_${selectedClaim.customers?.name || '서류'}.pdf` 
-            });
+            attachmentsArray.push({ content: pdfDataUri.split('base64,')[1], filename: `${element.getAttribute('data-docname')}_${selectedClaim.customers?.name || '서류'}.pdf` });
           }
         }
         
         const { error: invokeError } = await supabase.functions.invoke('send-claim-email', {
-          body: { 
-            to: emailMatch[1], from: emailData.sender || 'no-reply@yourdomain.com', 
-            subject: emailData.subject, text: emailData.content, attachments: attachmentsArray, 
-            companyName: companyInfo.company_name 
-          }
+          body: { to: emailMatch[1], from: emailData.sender || 'no-reply@yourdomain.com', subject: emailData.subject, text: emailData.content, attachments: attachmentsArray, companyName: companyInfo.company_name }
         });
         
         if (invokeError) throw new Error(invokeError.message || '이메일 발송 서버 응답 오류');
-        
-        const updateRes = await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
-        if (updateRes.error) throw new Error(`상태 업데이트 실패: ${updateRes.error.message}`);
+        await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
 
-        alert('메일이 성공적으로 전송되었습니다.'); 
-        setActiveModal(null); 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) fetchData(user.id);
-      } catch (err) { 
-        alert(`메일 전송에 실패했습니다:\n${err.message || err.toString()}`); 
-      } finally { setIsSendingEmail(false); }
+        alert('메일이 성공적으로 전송되었습니다.'); setActiveModal(null); 
+        const { data: { user } } = await supabase.auth.getUser(); if (user) fetchData(user.id);
+      } catch (err) { alert(`메일 전송에 실패했습니다:\n${err.message || err.toString()}`); } finally { setIsSendingEmail(false); }
     }
   };
 
   const handleForcePrint = () => { window.print(); };
 
-  // 💡 레이아웃 깨짐을 방지하기 위해 폼을 컴포넌트로 분리
   const renderDocInputs = () => {
     if (claimSubject === '기업 (업체 위탁 청구)') return null;
 
     return (
       <div className="mt-4 p-4 md:p-5 bg-white rounded-xl md:rounded-2xl border border-indigo-100 shadow-sm animate-in fade-in">
-        <div className="text-[11px] font-black text-indigo-600 mb-4 flex items-center gap-1">
-          <Edit3 size={14}/> {claimSubject === '개인 (본인 계좌 청구)' ? '본인 환급 계좌 정보 (청구서 인쇄용)' : '가족 대리인 및 계좌 정보 (청구서 인쇄용)'}
-        </div>
-        
+        <div className="text-[11px] font-black text-indigo-600 mb-4 flex items-center gap-1"><Edit3 size={14}/> {claimSubject === '개인 (본인 계좌 청구)' ? '본인 환급 계좌 정보 (청구서 인쇄용)' : '가족 대리인 및 계좌 정보 (청구서 인쇄용)'}</div>
         {claimSubject === '개인 (가족 계좌 청구)' && (
           <div className="mb-4 pb-4 border-b border-gray-100 space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">가족 성명</label>
-                <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_name} onChange={e => setDocInputs({...docInputs, claimant_name: e.target.value})} placeholder="예: 홍길동" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">대상자와의 관계</label>
-                <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_relation} onChange={e => setDocInputs({...docInputs, claimant_relation: e.target.value})} placeholder="예: 배우자, 자녀" />
-              </div>
+              <div><label className="text-[10px] text-gray-500 font-bold block mb-1">가족 성명</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_name} onChange={e => setDocInputs({...docInputs, claimant_name: e.target.value})} placeholder="예: 홍길동" /></div>
+              <div><label className="text-[10px] text-gray-500 font-bold block mb-1">대상자와의 관계</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_relation} onChange={e => setDocInputs({...docInputs, claimant_relation: e.target.value})} placeholder="예: 배우자, 자녀" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">주민등록번호</label>
-                <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_rrn} onChange={e => setDocInputs({...docInputs, claimant_rrn: e.target.value})} placeholder="- 포함 14자리" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">연락처</label>
-                <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_phone} onChange={e => setDocInputs({...docInputs, claimant_phone: e.target.value})} placeholder="010-0000-0000" />
-              </div>
+              <div><label className="text-[10px] text-gray-500 font-bold block mb-1">주민등록번호</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_rrn} onChange={e => setDocInputs({...docInputs, claimant_rrn: e.target.value})} placeholder="- 포함 14자리" /></div>
+              <div><label className="text-[10px] text-gray-500 font-bold block mb-1">연락처</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.claimant_phone} onChange={e => setDocInputs({...docInputs, claimant_phone: e.target.value})} placeholder="010-0000-0000" /></div>
             </div>
-
             <div>
               <label className="text-[10px] text-gray-500 font-bold block mb-2">가족 대리인 서명 (전자 서명)</label>
               <SignaturePad onSave={(dataUrl) => setDocInputs(prev => ({ ...prev, claimant_sign: dataUrl }))} />
             </div>
           </div>
         )}
-        
         <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="text-[10px] text-gray-500 font-bold block mb-1">환급 은행명</label>
-            <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.bank} onChange={e => setDocInputs({...docInputs, bank: e.target.value})} placeholder="예: 국민은행" />
-          </div>
-          <div className="col-span-2">
-            <label className="text-[10px] text-gray-500 font-bold block mb-1">계좌번호 (예금주: {claimSubject === '개인 (본인 계좌 청구)' ? selectedClaim?.customers?.name : docInputs.claimant_name})</label>
-            <input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.account_number} onChange={e => setDocInputs({...docInputs, account_number: e.target.value})} placeholder="- 포함 계좌번호 입력" />
-          </div>
+          <div><label className="text-[10px] text-gray-500 font-bold block mb-1">환급 은행명</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.bank} onChange={e => setDocInputs({...docInputs, bank: e.target.value})} placeholder="예: 국민은행" /></div>
+          <div className="col-span-2"><label className="text-[10px] text-gray-500 font-bold block mb-1">계좌번호 (예금주: {claimSubject === '개인 (본인 계좌 청구)' ? selectedClaim?.customers?.name : docInputs.claimant_name})</label><input className="w-full p-2.5 text-xs border border-gray-300 rounded-lg outline-none focus:border-indigo-400 focus:bg-indigo-50 transition-colors" value={docInputs.account_number} onChange={e => setDocInputs({...docInputs, account_number: e.target.value})} placeholder="- 포함 계좌번호 입력" /></div>
         </div>
       </div>
     );
@@ -783,64 +695,40 @@ export default function Claims() {
       <h1 className="text-3xl font-black mb-12 text-center tracking-[0.5em] mt-10">위 임 장</h1>
       <table className="w-full border-collapse border-[1.5px] border-black text-[13px] mb-10 text-center">
         <tbody>
-          <tr>
-            <td rowSpan="3" className="border-[1.5px] border-black p-3 font-bold bg-gray-100 w-[15%]">위임자<br/>(수급자)</td>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50 w-[20%]">성명</td>
-            <td className="border-[1.5px] border-black p-3 w-[65%] text-left pl-4 font-black">{claimData.customers?.name}</td>
-          </tr>
-          <tr>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">생년월일</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{claimData.customers?.birth_date}</td>
-          </tr>
-          <tr>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">주소</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4">{claimData.customers?.address} {claimData.customers?.detail_address}</td>
-          </tr>
-          <tr>
-            <td rowSpan="4" className="border-[1.5px] border-black p-3 font-bold bg-gray-100">수임자<br/>(대리인)</td>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">업체명</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4 font-black">{companyData.company_name}</td>
-          </tr>
-          <tr>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">대표자</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{companyData.representative_name}</td>
-          </tr>
-          <tr>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">연락처</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{companyData.contact_number}</td>
-          </tr>
-          <tr>
-            <td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">주소</td>
-            <td className="border-[1.5px] border-black p-3 text-left pl-4">{companyData.address} {companyData.detail_address}</td>
-          </tr>
+          <tr><td rowSpan="3" className="border-[1.5px] border-black p-3 font-bold bg-gray-100 w-[15%]">위임자<br/>(수급자)</td><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50 w-[20%]">성명</td><td className="border-[1.5px] border-black p-3 w-[65%] text-left pl-4 font-black">{claimData.customers?.name}</td></tr>
+          <tr><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">생년월일</td><td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{claimData.customers?.birth_date}</td></tr>
+          <tr><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">주소</td><td className="border-[1.5px] border-black p-3 text-left pl-4">{claimData.customers?.address} {claimData.customers?.detail_address}</td></tr>
+          <tr><td rowSpan="4" className="border-[1.5px] border-black p-3 font-bold bg-gray-100">수임자<br/>(대리인)</td><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">업체명</td><td className="border-[1.5px] border-black p-3 text-left pl-4 font-black">{companyData.company_name}</td></tr>
+          <tr><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">대표자</td><td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{companyData.representative_name}</td></tr>
+          <tr><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">연락처</td><td className="border-[1.5px] border-black p-3 text-left pl-4 font-bold">{companyData.contact_number}</td></tr>
+          <tr><td className="border-[1.5px] border-black p-3 font-bold bg-gray-50">주소</td><td className="border-[1.5px] border-black p-3 text-left pl-4">{companyData.address} {companyData.detail_address}</td></tr>
         </tbody>
       </table>
-      <div className="flex-1 flex flex-col justify-center px-6 leading-10 text-[15px] font-bold text-gray-800 tracking-tight">
-        <p className="text-justify indent-4">위 위임자는 「국민건강보험법」 제51조, 같은 법 시행규칙 제26조 및 「장애인보조기기 보험급여 기준 등에 관한 규칙」에 따라 보조기기 급여비용의 지급 청구 및 수령에 관한 일체의 권한을 위 수임자(대리인)에게 위임합니다.</p>
-      </div>
+      <div className="flex-1 flex flex-col justify-center px-6 leading-10 text-[15px] font-bold text-gray-800 tracking-tight"><p className="text-justify indent-4">위 위임자는 「국민건강보험법」 제51조, 같은 법 시행규칙 제26조 및 「장애인보조기기 보험급여 기준 등에 관한 규칙」에 따라 보조기기 급여비용의 지급 청구 및 수령에 관한 일체의 권한을 위 수임자(대리인)에게 위임합니다.</p></div>
       <div className="text-center font-black text-lg mt-10 mb-16 tracking-widest">{claimData.issue_date?.split('-')[0]}년 &nbsp;&nbsp; {claimData.issue_date?.split('-')[1]}월 &nbsp;&nbsp; {claimData.issue_date?.split('-')[2]}일</div>
-      <div className="flex justify-end items-center text-[15px] font-bold pr-12 mb-20 relative">
-        <span className="mr-4 text-gray-600">위임자(수급자) :</span>
-        <span className="mr-12 font-black text-lg">{claimData.customers?.name}</span>
-        <span className="text-gray-400 text-sm">(서명 또는 인)</span>
-        {claimData.customers?.signature && (
-          <img src={claimData.customers.signature} alt="서명" className="absolute right-6 top-1/2 -translate-y-1/2 w-[25mm] h-[15mm] object-contain mix-blend-multiply" />
-        )}
-      </div>
+      <div className="flex justify-end items-center text-[15px] font-bold pr-12 mb-20 relative"><span className="mr-4 text-gray-600">위임자(수급자) :</span><span className="mr-12 font-black text-lg">{claimData.customers?.name}</span><span className="text-gray-400 text-sm">(서명 또는 인)</span>{claimData.customers?.signature && (<img src={claimData.customers.signature} alt="서명" className="absolute right-6 top-1/2 -translate-y-1/2 w-[25mm] h-[15mm] object-contain mix-blend-multiply" />)}</div>
     </div>
   );
 
   const renderDocument = (fileName, claimData) => {
     const TargetDoc = documentComponents[fileName];
+    
+    // 💡 계약서 호환성을 위해 product 안에 hearing_aid를 병합하여 넘겨줌
     const adjustedClaimData = {
       ...claimData,
-      customer: claimData.customers || {}, product: claimData.products || {},
+      customer: claimData.customers || {}, 
+      product: {
+        ...claimData.products,
+        hearing_aid: claimData.item_type === 'hearing_aid' && claimData.hearing_aid_details ? {
+          right: claimData.hearing_aid_details.right?.enabled ? { ...(allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.right.product_id)) || {}), price: claimData.hearing_aid_details.right.price } : null,
+          left: claimData.hearing_aid_details.left?.enabled ? { ...(allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.left.product_id)) || {}), price: claimData.hearing_aid_details.left.price } : null
+        } : null
+      },
       account: { bank: docInputs.bank || claimData.account?.bank || '', account_number: docInputs.account_number || claimData.account?.account_number || '', holder: docInputs.holder || claimData.account?.holder || '' },
       claimant: { name: docInputs.claimant_name || claimData.claimant?.name || '', relation: docInputs.claimant_relation || claimData.claimant?.relation || '', resident_number: docInputs.claimant_rrn || claimData.claimant?.resident_number || '', phone: docInputs.claimant_phone || claimData.claimant?.phone || '', mobile: docInputs.claimant_phone || claimData.claimant?.mobile || '' },
       company: companyInfo || {},
       signatures: { claimant_sign: docInputs.claimant_sign || claimData.claimant?.signature || claimData.customers?.signature, customer_sign: claimData.customers?.signature, company_seal: companyInfo?.seal_image },
-      claimSubject: claimSubject,
-      issue_date: issueDate, issueDate: issueDate, written_date: issueDate, writtenDate: issueDate, write_date: issueDate, writeDate: issueDate, doc_date: issueDate, docDate: issueDate, publish_date: issueDate, publishDate: issueDate, confirm_date: issueDate, confirmDate: issueDate, confirmation_date: issueDate, confirmationDate: issueDate, signing_date: issueDate, signingDate: issueDate, signature_date: issueDate, signatureDate: issueDate, print_date: issueDate, printDate: issueDate, today_date: issueDate, todayDate: issueDate, current_date: issueDate, currentDate: issueDate, date: issueDate
+      claimSubject: claimSubject, issueDate: issueDate
     };
 
     if (fileName === '교부비용청구서' || fileName === '거래명세서' || fileName === '보조기기 급여 지급청구서') adjustedClaimData.claim_date = issueDate;
@@ -860,15 +748,8 @@ export default function Claims() {
           <h2 className="text-2xl font-black mb-10 text-center tracking-widest">업체 자격 서류</h2>
           <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
             {companyInfo.qualifying_docs && companyInfo.qualifying_docs.length > 0 ? (
-              companyInfo.qualifying_docs.map((doc, i) => (
-                <div key={i} className="flex flex-col items-center">
-                   <span className="text-sm font-bold text-gray-500 mb-2">{doc.type}</span>
-                   {doc.image && <img src={doc.image} className="max-w-full max-h-[100mm] object-contain border p-2 shadow-sm" alt={doc.type}/>}
-                </div>
-              ))
-            ) : (
-              <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 업체 자격 서류가 없습니다.</div>
-            )}
+              companyInfo.qualifying_docs.map((doc, i) => (<div key={i} className="flex flex-col items-center"><span className="text-sm font-bold text-gray-500 mb-2">{doc.type}</span>{doc.image && <img src={doc.image} className="max-w-full max-h-[100mm] object-contain border p-2 shadow-sm" alt={doc.type}/>}</div>))
+            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 업체 자격 서류가 없습니다.</div>)}
           </div>
         </div>
       );
@@ -884,26 +765,15 @@ export default function Claims() {
           </div>
         );
       }
-      return (
-        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
-          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">검수확인서</h2>
-          <div className="flex-1 border-2 border-dashed border-gray-300 w-full flex items-center justify-center bg-gray-50 rounded-2xl text-gray-400 font-bold text-center p-10 leading-loose">공단 제출용 검수확인서 첨부 영역입니다.</div>
-        </div>
-      );
-    } else if (fileName === '구매 증빙서류 (세금계산서 등)') {
-      return <ImageOnlyDoc title="구매 증빙서류 (세금계산서/카드전표/현금영수증)" emptyMessage="외부 정산 시스템(홈택스 등)에서 발행한 증빙 서류를 별도 첨부해 주세요." />;
+      return <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative"><h2 className="text-2xl font-black mb-10 text-center tracking-widest">검수확인서</h2><div className="flex-1 border-2 border-dashed border-gray-300 w-full flex items-center justify-center bg-gray-50 rounded-2xl text-gray-400 font-bold text-center p-10 leading-loose">공단 제출용 검수확인서 첨부 영역입니다.</div></div>;
     } else if (fileName.includes('기타 첨부') || fileName.includes('교부 사진')) {
       return (
         <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
           <h2 className="text-2xl font-black mb-10 text-center tracking-widest">{fileName.includes('교부 사진') ? '교부 사진 (기기전체 및 바코드)' : '기타 첨부 자료'}</h2>
           <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
             {adjustedClaimData?.receipt_photos && adjustedClaimData.receipt_photos.length > 0 ? (
-              adjustedClaimData.receipt_photos.map((src, i) => (
-                <div key={i} className="flex flex-col items-center"><span className="text-sm font-bold text-gray-500 mb-2">사진 {i + 1}</span><img src={src} className="max-w-full max-h-[70mm] object-contain border p-2 shadow-sm" alt={`기타첨부 ${i+1}`}/></div>
-              ))
-            ) : (
-              <div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 사진이 없습니다.</div>
-            )}
+              adjustedClaimData.receipt_photos.map((src, i) => (<div key={i} className="flex flex-col items-center"><span className="text-sm font-bold text-gray-500 mb-2">사진 {i + 1}</span><img src={src} className="max-w-full max-h-[70mm] object-contain border p-2 shadow-sm" alt={`기타첨부 ${i+1}`}/></div>))
+            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 사진이 없습니다.</div>)}
           </div>
         </div>
       );
@@ -914,28 +784,12 @@ export default function Claims() {
   const renderStatusPipeline = (claim) => {
     const currentStatus = claim.status;
     const isPhotoMissing = currentStatus === '교부 완료' && (!claim.receipt_photos || claim.receipt_photos.length === 0);
-
-    let currentIndex = STATUS_STAGES.indexOf(currentStatus);
-    if (currentIndex === -1) currentIndex = 0;
+    let currentIndex = STATUS_STAGES.indexOf(currentStatus); if (currentIndex === -1) currentIndex = 0;
     
     const formatStageText = (stage) => {
       if (!stage) return null;
-      if (stage === '교부 완료' && isPhotoMissing && stage === currentStatus) {
-        return (
-          <div className="text-center leading-tight flex flex-col items-center justify-center">
-            <div className="font-extrabold flex items-center gap-1"><AlertTriangle size={10}/> 교부 완료</div>
-            <div className="text-[10px] font-black text-rose-500 mt-0.5">(사진 누락)</div>
-          </div>
-        );
-      }
-      if (stage.includes('(')) {
-        const [main, sub] = stage.split(' (');
-        return (
-          <div className="text-center leading-tight">
-            <div className="font-extrabold">{main}</div><div className="text-[9px] font-bold opacity-80 mt-0.5">({sub.replace(')', '')})</div>
-          </div>
-        );
-      }
+      if (stage === '교부 완료' && isPhotoMissing && stage === currentStatus) return (<div className="text-center leading-tight flex flex-col items-center justify-center"><div className="font-extrabold flex items-center gap-1"><AlertTriangle size={10}/> 교부 완료</div><div className="text-[10px] font-black text-rose-500 mt-0.5">(사진 누락)</div></div>);
+      if (stage.includes('(')) { const [main, sub] = stage.split(' ('); return (<div className="text-center leading-tight"><div className="font-extrabold">{main}</div><div className="text-[9px] font-bold opacity-80 mt-0.5">({sub.replace(')', '')})</div></div>); }
       return <div className="font-extrabold text-center">{stage}</div>;
     };
 
@@ -950,49 +804,55 @@ export default function Claims() {
       return 'bg-gray-100 text-gray-700 border-gray-300';
     };
 
-    const currentStage = STATUS_STAGES[currentIndex];
-    const nextStage = currentIndex < STATUS_STAGES.length - 1 ? STATUS_STAGES[currentIndex + 1] : null;
+    const currentStage = STATUS_STAGES[currentIndex]; const nextStage = currentIndex < STATUS_STAGES.length - 1 ? STATUS_STAGES[currentIndex + 1] : null;
 
     return (
       <div className="flex flex-col gap-1.5 w-full max-w-[240px] py-1">
         <div className="flex gap-1 items-center px-0.5">
-          {STATUS_STAGES.map((_, idx) => (
-            <div key={idx} className={`h-1 flex-1 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-indigo-600' : idx < currentIndex ? 'bg-indigo-200' : 'bg-gray-100'}`} />
-          ))}
+          {STATUS_STAGES.map((_, idx) => (<div key={idx} className={`h-1 flex-1 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-indigo-600' : idx < currentIndex ? 'bg-indigo-200' : 'bg-gray-100'}`} />))}
         </div>
         <div className="flex items-center gap-1.5 justify-start">
           <div className={`px-2.5 py-1 rounded-xl border text-[11px] min-w-[75px] h-[34px] flex items-center justify-center shadow-2sm ${getStageColor(currentStage, true)}`}>{formatStageText(currentStage)}</div>
-          {nextStage && (
-            <><span className="text-gray-300 font-black text-xs animate-pulse">➔</span><div className={`px-2.5 py-1 rounded-xl border border-dashed text-[11px] min-w-[75px] h-[34px] flex items-center justify-center opacity-60 ${getStageColor(nextStage, false)}`}>{formatStageText(nextStage)}</div></>
-          )}
+          {nextStage && (<><span className="text-gray-300 font-black text-xs animate-pulse">➔</span><div className={`px-2.5 py-1 rounded-xl border border-dashed text-[11px] min-w-[75px] h-[34px] flex items-center justify-center opacity-60 ${getStageColor(nextStage, false)}`}>{formatStageText(nextStage)}</div></>)}
         </div>
       </div>
     );
   };
 
-  const renderActions = (claim, isProductMissing, s) => (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
-      {!isProductMissing && s === '대기 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
-      {s === '배송 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-amber-600 flex items-center gap-1.5"><Camera size={14}/> 사진 등록</button>}
-      {s === '교부 완료' && (
-        <>
-          {(!claim.receipt_photos || claim.receipt_photos.length === 0) && (
-            <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-black shadow-sm hover:bg-rose-100 flex items-center gap-1.5 animate-pulse" title="수취 증빙 사진이 누락되었습니다."><Camera size={14}/> 사진 보완</button>
-          )}
-          <button onClick={() => openPrintModal(claim)} className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-50 flex items-center gap-1.5"><Printer size={14}/> 인쇄</button>
-          <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
-        </>
-      )}
-      {s === '청구 완료 (계산서 미발행)' && <button onClick={() => handleTaxInvoiceConfirm(claim.id)} className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"><Send size={14}/> 세금계산서 발행 완료</button>}
-      {s === '청구 완료 (계산서 발행)' && <button onClick={() => { setSelectedClaim(claim); setActiveModal('settlement'); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14}/> 정산 완료</button>}
-      {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
+  const renderActions = (claim, isProductMissing, s) => {
+    // 💡 계약서 관리 버튼 보이기 조건
+    const isHearingAid = claim.item_type === 'hearing_aid' || claim?.products?.category?.includes('보청기') || claim?.products?.name?.includes('보청기');
 
-      <div className="flex items-center gap-1 ml-1 md:opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => openProductAssignmentModal(claim)} className="p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-lg border border-indigo-100 transition-colors" title="동일 대상자 품목 추가 접수 (데이터 연동)"><Plus size={14} strokeWidth={3} /></button>
-        <button onClick={() => openEditModal(claim)} className="p-2 text-gray-400 hover:text-gray-800 bg-gray-50 rounded-lg border border-gray-200" title="내역 수정"><Edit3 size={14}/></button>
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {isHearingAid && !isProductMissing && (
+          <button onClick={() => {
+            setSelectedClaim(claim); setIssueDate(new Date().toISOString().split('T')[0]); setActiveModal('contract');
+          }} className="px-3 py-2 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-black shadow-sm hover:bg-indigo-100 flex items-center gap-1.5 mr-2">
+            <FileText size={14}/> 계약서 관리
+          </button>
+        )}
+
+        {!isProductMissing && s === '대기 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
+        {s === '배송 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-amber-600 flex items-center gap-1.5"><Camera size={14}/> 사진 등록</button>}
+        {s === '교부 완료' && (
+          <>
+            {(!claim.receipt_photos || claim.receipt_photos.length === 0) && (<button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-black shadow-sm hover:bg-rose-100 flex items-center gap-1.5 animate-pulse" title="수취 증빙 사진이 누락되었습니다."><Camera size={14}/> 사진 보완</button>)}
+            <button onClick={() => openPrintModal(claim)} className="px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-50 flex items-center gap-1.5"><Printer size={14}/> 인쇄</button>
+            <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
+          </>
+        )}
+        {s === '청구 완료 (계산서 미발행)' && <button onClick={() => handleTaxInvoiceConfirm(claim.id)} className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"><Send size={14}/> 세금계산서 발행 완료</button>}
+        {s === '청구 완료 (계산서 발행)' && <button onClick={() => { setSelectedClaim(claim); setActiveModal('settlement'); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14}/> 정산 완료</button>}
+        {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
+
+        <div className="flex items-center gap-1 ml-1 md:opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => openProductAssignmentModal(claim)} className="p-2 text-indigo-600 hover:text-white bg-indigo-50 hover:bg-indigo-600 rounded-lg border border-indigo-100 transition-colors" title="동일 대상자 품목 추가 접수 (데이터 연동)"><Plus size={14} strokeWidth={3} /></button>
+          <button onClick={() => openEditModal(claim)} className="p-2 text-gray-400 hover:text-gray-800 bg-gray-50 rounded-lg border border-gray-200" title="내역 수정"><Edit3 size={14}/></button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
@@ -1014,10 +874,7 @@ export default function Claims() {
       <div className="print-hide-ui space-y-6 animate-in fade-in duration-700 font-sans pb-24">
         
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight">청구/교부 통합 리스트</h1>
-            <p className="text-gray-500 mt-2 font-bold text-sm">업무 흐름 파이프라인 (고밀도 뷰)</p>
-          </div>
+          <div><h1 className="text-3xl font-black text-gray-900 tracking-tight">청구/교부 통합 리스트</h1><p className="text-gray-500 mt-2 font-bold text-sm">업무 흐름 파이프라인 (고밀도 뷰)</p></div>
           <div className="flex gap-2 w-full md:w-auto">
             <button onClick={resetFilters} className="flex-1 md:flex-none items-center justify-center gap-2 px-4 py-3 bg-gray-100 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-200 flex"><RefreshCw size={14}/> 초기화</button>
             <button onClick={() => setActiveModal('create')} className="flex-[2] md:flex-none items-center justify-center gap-2 px-5 py-3 bg-indigo-600 rounded-xl text-sm font-black text-white hover:bg-indigo-700 shadow-md flex"><Plus size={18}/> 신규 접수(상품 할당)</button>
@@ -1025,280 +882,253 @@ export default function Claims() {
         </div>
 
         <div className="flex flex-col xl:grid xl:grid-cols-12 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm font-bold items-center">
-          <div className="w-full xl:col-span-3 relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input type="text" placeholder="대상자/기관 검색..." className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-          </div>
-          <div className="w-full xl:col-span-2 relative">
-            <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <select className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="전체">모든 진행 상태</option>
-              {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          
+          <div className="w-full xl:col-span-3 relative group"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="대상자/기관 검색..." className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+          <div className="w-full xl:col-span-2 relative"><Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><select className="w-full pl-10 pr-3 py-3 bg-gray-50 rounded-xl outline-none text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="전체">모든 진행 상태</option>{STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
           <div className="w-full xl:col-span-7 flex flex-wrap md:flex-nowrap justify-start xl:justify-end items-center gap-2">
-            <button onClick={() => setGroupByCustomer(!groupByCustomer)} className={`px-3 py-2 text-xs font-bold border rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${groupByCustomer ? 'bg-indigo-50 border-indigo-300 text-indigo-600' : 'bg-white border-gray-200 text-gray-600 hover:text-indigo-600 hover:bg-gray-50'}`}>
-              {groupByCustomer ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />} 대상자 묶기
-            </button>
-            <div className="flex flex-1 md:flex-none items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl">
-              <Calendar className="text-gray-400" size={16} />
-              <input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
-              <span className="text-gray-300">~</span>
-              <input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
-            </div>
-            <div className="flex gap-1 w-full md:w-auto">
-              <button onClick={() => setQuickDate('today')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">오늘</button>
-              <button onClick={() => setQuickDate('week')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1주일</button>
-              <button onClick={() => setQuickDate('month')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1개월</button>
-            </div>
+            <button onClick={() => setGroupByCustomer(!groupByCustomer)} className={`px-3 py-2 text-xs font-bold border rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${groupByCustomer ? 'bg-indigo-50 border-indigo-300 text-indigo-600' : 'bg-white border-gray-200 text-gray-600 hover:text-indigo-600 hover:bg-gray-50'}`}>{groupByCustomer ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />} 대상자 묶기</button>
+            <div className="flex flex-1 md:flex-none items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl"><Calendar className="text-gray-400" size={16} /><input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} /><span className="text-gray-300">~</span><input type="date" className="bg-transparent outline-none text-xs text-gray-700 w-full" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} /></div>
+            <div className="flex gap-1 w-full md:w-auto"><button onClick={() => setQuickDate('today')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">오늘</button><button onClick={() => setQuickDate('week')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1주일</button><button onClick={() => setQuickDate('month')} className="flex-1 px-3 py-2 text-xs font-bold bg-white border border-gray-200 rounded-xl text-gray-600 hover:text-indigo-600 shadow-sm">1개월</button></div>
           </div>
         </div>
 
         <div className="block md:hidden space-y-4">
           {currentItems.length > 0 ? currentItems.map((claim) => {
             const s = claim.status;
-            const isProductMissing = !claim.product_id || claim.products?.name === '품목 미지정';
+            const isProductMissing = (!claim.product_id && claim.item_type === 'general') || claim.products?.name === '품목 미지정';
             const qual = claim.customers?.qualification;
-            const isNHIS = qual === '건강보험' || qual === '경감(건강보험)';
-            const branchName = isNHIS ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
+            const branchName = (qual === '건강보험' || qual === '경감(건강보험)') ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
 
             return (
               <div key={claim.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group">
                 <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="font-black text-lg text-gray-900 leading-tight">{claim.customers?.name}</div>
-                    <div className="text-xs text-gray-500 font-bold mt-0.5">{branchName}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-gray-500 font-mono">{formatShortDate(claim.claim_date)}</div>
-                    <div className="text-sm font-black text-indigo-600 font-mono mt-0.5">{claim.total_amount?.toLocaleString()}원</div>
-                  </div>
+                  <div><div className="font-black text-lg text-gray-900 leading-tight">{claim.customers?.name}</div><div className="text-xs text-gray-500 font-bold mt-0.5">{branchName}</div></div>
+                  <div className="text-right"><div className="text-xs text-gray-500 font-mono">{formatShortDate(claim.claim_date)}</div><div className="text-sm font-black text-indigo-600 font-mono mt-0.5">{claim.total_amount?.toLocaleString()}원</div></div>
                 </div>
-
-                {claim.notes && (
-                  <div title={claim.notes} className="mb-3 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-2 py-1 rounded">
-                    <FileText size={10} /> 특이사항 있음 (수정 화면 확인)
-                  </div>
-                )}
-
+                {claim.notes && (<div title={claim.notes} className="mb-3 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-2 py-1 rounded"><FileText size={10} /> 특이사항 있음 (수정 화면 확인)</div>)}
                 <div className="bg-gray-50 rounded-xl p-3 mb-4 flex flex-col gap-3">
-                  <div className="font-black text-sm text-indigo-900 leading-snug break-keep flex items-center gap-1">
-                    <Package size={14} className="text-indigo-400" />
-                    {isProductMissing ? <span className="text-rose-500">상품 미할당</span> : claim.products?.name}
-                  </div>
-                  
-                  {isProductMissing ? (
-                    <button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse">
-                      <Plus size={12}/> 상품할당 바로가기
-                    </button>
-                  ) : (
-                    <div className="overflow-x-auto custom-scrollbar pb-1">
-                      {renderStatusPipeline(claim)}
-                    </div>
-                  )}
+                  <div className="font-black text-sm text-indigo-900 leading-snug break-keep flex items-center gap-1"><Package size={14} className="text-indigo-400" />{isProductMissing ? <span className="text-rose-500">상품 미할당</span> : claim.products?.name}</div>
+                  {isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (<div className="overflow-x-auto custom-scrollbar pb-1">{renderStatusPipeline(claim)}</div>)}
                 </div>
-
                 {renderActions(claim, isProductMissing, s)}
               </div>
             );
-          }) : (
-            <div className="p-10 text-center text-gray-400 font-bold bg-white rounded-2xl border border-gray-100">등록된 청구 내역이 없습니다.</div>
-          )}
+          }) : (<div className="p-10 text-center text-gray-400 font-bold bg-white rounded-2xl border border-gray-100">등록된 청구 내역이 없습니다.</div>)}
         </div>
 
         <div className="hidden md:flex bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex-col">
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
-              <tr>
-                <th className="py-3 px-4 w-[5%] text-center">No.</th>
-                <th className="py-3 px-4 w-[10%]">접수일</th>
-                <th className="py-3 px-5 w-[15%]">대상자 / 기관</th>
-                <th className="py-3 px-5 w-[20%]">할당 품목</th>
-                <th className="py-3 px-4 text-right">청구금액</th>
-                <th className="py-3 px-4">입금일</th>
-                <th className="py-3 px-5 w-[25%]">진행 파이프라인</th>
-                <th className="py-3 px-5 text-right w-[25%]">업무 실행 (단계별 제안)</th>
-              </tr>
+              <tr><th className="py-3 px-4 w-[5%] text-center">No.</th><th className="py-3 px-4 w-[10%]">접수일</th><th className="py-3 px-5 w-[15%]">대상자 / 기관</th><th className="py-3 px-5 w-[20%]">할당 품목</th><th className="py-3 px-4 text-right">청구금액</th><th className="py-3 px-4">입금일</th><th className="py-3 px-5 w-[25%]">진행 파이프라인</th><th className="py-3 px-5 text-right w-[25%]">업무 실행 (단계별 제안)</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
               {currentItems.map((claim, index) => {
                 const s = claim.status;
                 const serialNumber = filteredClaims.length - (indexOfFirstItem + index);
-                const isProductMissing = !claim.product_id || claim.products?.name === '품목 미지정';
-                const qual = claim.customers?.qualification;
-                const isNHIS = qual === '건강보험' || qual === '경감(건강보험)';
+                const isProductMissing = (!claim.product_id && claim.item_type === 'general') || claim.products?.name === '품목 미지정';
+                const isNHIS = (claim.customers?.qualification === '건강보험' || claim.customers?.qualification === '경감(건강보험)');
                 const branchName = isNHIS ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
                 
                 return (
                   <tr key={claim.id} className="hover:bg-indigo-50/30 transition-colors group">
-                    <td className="py-3 px-4 text-center align-middle font-mono text-xs font-black text-gray-400">
-                      {serialNumber}
-                    </td>
-                    <td className="py-3 px-4 text-gray-500 font-mono text-[13px] font-bold align-middle tracking-tight">
-                      {formatShortDate(claim.claim_date)}
-                    </td>
+                    <td className="py-3 px-4 text-center align-middle font-mono text-xs font-black text-gray-400">{serialNumber}</td>
+                    <td className="py-3 px-4 text-gray-500 font-mono text-[13px] font-bold align-middle tracking-tight">{formatShortDate(claim.claim_date)}</td>
                     <td className="py-3 px-5 align-middle">
                       <div className="font-black text-gray-900">{claim.customers?.name}</div>
-                      <div className="text-[10px] font-bold truncate mt-0.5 flex gap-1">
-                        <span className={`px-1.5 py-[1px] rounded ${isNHIS ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                          {isNHIS ? '공단청구' : '지자체'}
-                        </span>
-                        <span className="text-gray-500">{branchName}</span>
-                      </div>
-                      {claim.notes && (
-                        <div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help">
-                          <FileText size={10} /> 특이사항 있음
-                        </div>
-                      )}
+                      <div className="text-[10px] font-bold truncate mt-0.5 flex gap-1"><span className={`px-1.5 py-[1px] rounded ${isNHIS ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>{isNHIS ? '공단청구' : '지자체'}</span><span className="text-gray-500">{branchName}</span></div>
+                      {claim.notes && (<div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help"><FileText size={10} /> 특이사항 있음</div>)}
                     </td>
                     <td className="py-3 px-5 text-indigo-900 font-black text-xs leading-snug break-keep align-middle">
-                      {isProductMissing ? (
-                        <span className="text-rose-500 font-bold bg-rose-50 px-2 py-1 rounded-md text-[11px] inline-flex items-center gap-1"><AlertTriangle size={12}/> 상품 미할당</span>
-                      ) : (
-                        claim.products?.name
-                      )}
+                      {isProductMissing ? (<span className="text-rose-500 font-bold bg-rose-50 px-2 py-1 rounded-md text-[11px] inline-flex items-center gap-1"><AlertTriangle size={12}/> 상품 미할당</span>) : (claim.products?.name)}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-xs">{claim.total_amount?.toLocaleString()}</td>
                     <td className="py-3 px-4 font-mono text-xs">{claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</td>
-                    <td className="py-3 px-5 align-middle">
-                      {isProductMissing ? (
-                        <button onClick={() => openProductAssignmentModal(claim)} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm hover:bg-rose-700 flex items-center gap-1 animate-pulse">
-                          <Plus size={12}/> 상품할당 바로가기
-                        </button>
-                      ) : (
-                        renderStatusPipeline(claim)
-                      )}
-                    </td>
-                    <td className="py-3 px-5 text-right align-middle">
-                      {renderActions(claim, isProductMissing, s)}
-                    </td>
+                    <td className="py-3 px-5 align-middle">{isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm hover:bg-rose-700 flex items-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (renderStatusPipeline(claim))}</td>
+                    <td className="py-3 px-5 text-right align-middle">{renderActions(claim, isProductMissing, s)}</td>
                   </tr>
                 );
               })}
-              {filteredClaims.length === 0 && (
-                <tr><td colSpan="8" className="py-12 text-center text-gray-400 font-bold text-sm">등록된 청구 내역이 없습니다.</td></tr>
-              )}
+              {filteredClaims.length === 0 && (<tr><td colSpan="8" className="py-12 text-center text-gray-400 font-bold text-sm">등록된 청구 내역이 없습니다.</td></tr>)}
             </tbody>
           </table>
         </div>
 
         {filteredClaims.length > 0 && (
           <div className="flex justify-between items-center px-4 md:px-6 py-4 bg-transparent md:bg-gray-50/50 border-t-0 md:border-t border-gray-100">
-            <div className="hidden md:block text-xs font-bold text-gray-500">
-              총 <span className="text-indigo-600 font-black">{filteredClaims.length}</span> 건 조회됨
-            </div>
+            <div className="hidden md:block text-xs font-bold text-gray-500">총 <span className="text-indigo-600 font-black">{filteredClaims.length}</span> 건 조회됨</div>
             <div className="flex w-full md:w-auto justify-center md:justify-end gap-1.5 items-center">
-              <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors">
-                <ChevronLeft size={16} strokeWidth={2.5} />
-              </button>
-              <div className="flex gap-1 px-2">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(num => (
-                  <button key={num} onClick={() => setCurrentPage(num)} className={`w-8 h-8 rounded-lg text-[13px] font-black flex items-center justify-center transition-colors shadow-sm ${currentPage === num ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{num}</button>
-                ))}
-              </div>
-              <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors">
-                <ChevronRight size={16} strokeWidth={2.5} />
-              </button>
+              <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"><ChevronLeft size={16} strokeWidth={2.5} /></button>
+              <div className="flex gap-1 px-2">{Array.from({ length: totalPages }, (_, i) => i + 1).map(num => (<button key={num} onClick={() => setCurrentPage(num)} className={`w-8 h-8 rounded-lg text-[13px] font-black flex items-center justify-center transition-colors shadow-sm ${currentPage === num ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{num}</button>))}</div>
+              <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm bg-gray-100 transition-colors"><ChevronRight size={16} strokeWidth={2.5} /></button>
             </div>
           </div>
         )}
 
+        {/* 💡 계약서 단독 팝업 */}
+        {activeModal === 'contract' && selectedClaim && (
+          <div className="fixed inset-0 z-[250] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+             <div className="bg-gray-200 w-full max-w-4xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col flex-1">
+              <div className="p-5 md:p-6 bg-indigo-900 text-white flex justify-between items-center shrink-0">
+                <h4 className="text-lg flex items-center gap-2"><FileText size={20}/> 보청기 구매 표준계약서 관리</h4>
+                <button onClick={() => setActiveModal(null)} className="hover:text-indigo-200"><X size={20}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center custom-scrollbar">
+                <div id="contract-document-wrapper" className="shrink-0 shadow-lg" style={{ transform: 'scale(0.95)', transformOrigin: 'top center' }}>
+                  <Contracts 
+                    data={{
+                      ...selectedClaim,
+                      customer: selectedClaim.customers || {}, product: {
+                        ...selectedClaim.products,
+                        hearing_aid: selectedClaim.item_type === 'hearing_aid' && selectedClaim.hearing_aid_details ? {
+                          right: selectedClaim.hearing_aid_details.right?.enabled ? { ...(allDevices.find(d => String(d.id) === String(selectedClaim.hearing_aid_details.right.product_id)) || {}), price: selectedClaim.hearing_aid_details.right.price } : null,
+                          left: selectedClaim.hearing_aid_details.left?.enabled ? { ...(allDevices.find(d => String(d.id) === String(selectedClaim.hearing_aid_details.left.product_id)) || {}), price: selectedClaim.hearing_aid_details.left.price } : null
+                        } : null
+                      }, company: companyInfo || {}, signatures: { customer_sign: selectedClaim.customers?.signature, company_seal: companyInfo?.seal_image }, issueDate: issueDate
+                    }} 
+                    company={companyInfo} 
+                  />
+                </div>
+              </div>
+              <div className="p-4 md:p-5 border-t bg-white flex gap-2 md:gap-3 shrink-0">
+                <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold">닫기</button>
+                <button onClick={async () => {
+                    try {
+                      const element = document.getElementById('contract-document');
+                      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+                      const pdf = new jsPDF('p', 'mm', 'a4');
+                      pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 210, 297);
+                      pdf.save(`보청기_표준계약서_${selectedClaim.customers?.name}.pdf`);
+                    } catch (err) { alert('PDF 저장 중 오류가 발생했습니다.'); }
+                  }} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-black flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-md">
+                  <Printer size={18}/> 계약서 PDF 저장 / 인쇄
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 신규 등록 모달 */}
         {activeModal === 'create' && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
-            <div className="bg-white w-full max-w-lg rounded-3xl md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl">
-              <h4 className="text-xl md:text-2xl font-black mb-2">신규 대상자 상품 할당</h4>
-              <div className="space-y-4 mb-8 mt-6">
+            <div className="bg-white w-full max-w-xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl flex flex-col max-h-[90vh]">
+              <div className="flex justify-between items-center shrink-0 mb-4">
+                <h4 className="text-xl md:text-2xl font-black">신규 대상자 상품 할당</h4>
+                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); }}><X size={24}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
                 <div>
                   <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">대상자 (수급자) 선택</label>
-                  <input type="text" placeholder="대상자 성명 또는 생년월일 실시간 검색..." className="w-full bg-white p-3 mb-2 rounded-xl outline-none border border-gray-200 text-xs font-bold text-gray-900" value={custSearchTerm} onChange={e => setCustSearchTerm(e.target.value)} />
-                  <select className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none font-bold text-gray-800 border border-gray-200" value={newData.customer_id} onChange={e => setNewData({...newData, customer_id: e.target.value})}>
-                    <option value="">대상자를 선택하세요 ({filteredCustomersForSelect.length}건 검색됨)</option>
+                  <input type="text" placeholder="대상자 성명/생년월일 검색..." className="w-full bg-white p-3 mb-2 rounded-xl border border-gray-200 text-xs font-bold" value={custSearchTerm} onChange={e => setCustSearchTerm(e.target.value)} />
+                  <select className="w-full bg-gray-50 p-4 rounded-xl outline-none font-bold border border-gray-200" value={newData.customer_id} onChange={e => setNewData({...newData, customer_id: e.target.value})}>
+                    <option value="">대상자 선택 ({filteredCustomersForSelect.length})</option>
                     {filteredCustomersForSelect.map(c => <option key={c.id} value={c.id}>{c.name} ({c.birth_date})</option>)}
                   </select>
                 </div>
+                
+                {/* 💡 일반/보청기 토글 영역 */}
                 <div>
-                  <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부할 상품 선택</label>
-                  <input type="text" placeholder="할당할 상품 이름 또는 고유 카테고리 실시간 검색..." className="w-full bg-white p-3 mb-2 rounded-xl outline-none border border-gray-200 text-xs font-bold text-indigo-900" value={prodSearchTerm} onChange={e => setProdSearchTerm(e.target.value)} />
-                  <select className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none font-bold text-indigo-700 border border-gray-200" value={newData.product_id} onChange={e => { const selectedId = e.target.value; const matchedDevice = allDevices.find(d => String(d.id) === String(selectedId)); setNewData({ ...newData, product_id: selectedId, total_amount: matchedDevice ? (matchedDevice.price || 0) : 0 }); }}>
-                    <option value="">지급할 상품을 선택하세요 ({filteredDevicesForSelect.length}건 검색됨)</option>
-                    {filteredDevicesForSelect.map(d => <option key={d.id} value={d.id}>{d.category ? `[${d.category}]` : ''} {d.name}</option>)}
-                  </select>
+                  <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">상품 유형 선택</label>
+                  <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl">
+                    <button type="button" onClick={() => setNewData({...newData, item_type: 'general'})} className={`flex-1 py-2.5 text-xs font-black rounded-lg transition-colors ${newData.item_type === 'general' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:bg-gray-200'}`}>일반 단일 품목</button>
+                    <button type="button" onClick={() => setNewData({...newData, item_type: 'hearing_aid'})} className={`flex-1 py-2.5 text-xs font-black rounded-lg transition-colors ${newData.item_type === 'hearing_aid' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:bg-gray-200'}`}>보청기 (좌/우 개별 할당)</button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.purchase_date} onChange={e => setNewData({...newData, purchase_date: e.target.value})} /></div>
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.mfg_date} onChange={e => setNewData({...newData, mfg_date: e.target.value})} /></div>
+
+                {newData.item_type === 'general' ? (
+                  <div>
+                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부할 상품 선택</label>
+                    <input type="text" placeholder="일반 상품 검색..." className="w-full bg-white p-3 mb-2 rounded-xl border border-gray-200 text-xs font-bold text-indigo-900" value={prodSearchTerm} onChange={e => setProdSearchTerm(e.target.value)} />
+                    <select className="w-full bg-gray-50 p-4 rounded-xl outline-none font-bold text-indigo-700 border border-gray-200" value={newData.product_id} onChange={e => { const matchedDevice = allDevices.find(d => String(d.id) === String(e.target.value)); setNewData({ ...newData, product_id: e.target.value, total_amount: matchedDevice?.price || 0 }); }}>
+                      <option value="">일반 상품 선택...</option>
+                      {filteredDevicesForSelect.map(d => <option key={d.id} value={d.id}>{d.category ? `[${d.category}]` : ''} {d.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-indigo-100 p-3 rounded-xl bg-indigo-50/30">
+                    <div className={`p-3 border rounded-xl transition-all ${newData.hearing_aid_details.right.enabled ? 'bg-white border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                      <div className="flex items-center gap-2 mb-2"><input type="checkbox" className="w-4 h-4 cursor-pointer" checked={newData.hearing_aid_details.right.enabled} onChange={e => handleHearingAidChange('newData', 'right', 'enabled', e.target.checked)} /><span className="text-xs font-black">우측 (Right)</span></div>
+                      <select disabled={!newData.hearing_aid_details.right.enabled} className="w-full text-[11px] p-2 bg-gray-50 border border-gray-200 rounded-lg mb-2" value={newData.hearing_aid_details.right.product_id} onChange={e => handleHearingAidChange('newData', 'right', 'product_id', e.target.value)}>
+                        <option value="">보청기 모델 선택...</option>
+                        {allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                      <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!newData.hearing_aid_details.right.enabled} className="w-full text-xs p-2 border border-gray-200 rounded-lg text-right" value={newData.hearing_aid_details.right.price} onChange={e => handleHearingAidChange('newData', 'right', 'price', e.target.value)} /></div>
+                    </div>
+                    <div className={`p-3 border rounded-xl transition-all ${newData.hearing_aid_details.left.enabled ? 'bg-white border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                      <div className="flex items-center gap-2 mb-2"><input type="checkbox" className="w-4 h-4 cursor-pointer" checked={newData.hearing_aid_details.left.enabled} onChange={e => handleHearingAidChange('newData', 'left', 'enabled', e.target.checked)} /><span className="text-xs font-black">좌측 (Left)</span></div>
+                      <select disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-[11px] p-2 bg-gray-50 border border-gray-200 rounded-lg mb-2" value={newData.hearing_aid_details.left.product_id} onChange={e => handleHearingAidChange('newData', 'left', 'product_id', e.target.value)}>
+                        <option value="">보청기 모델 선택...</option>
+                        {allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                      <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-xs p-2 border border-gray-200 rounded-lg text-right" value={newData.hearing_aid_details.left.price} onChange={e => handleHearingAidChange('newData', 'left', 'price', e.target.value)} /></div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.purchase_date} onChange={e => setNewData({...newData, purchase_date: e.target.value})} /></div>
+                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.mfg_date} onChange={e => setNewData({...newData, mfg_date: e.target.value})} /></div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} /></div>
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">청구 금액</label><input type="number" className="w-full bg-gray-50 p-4 rounded-xl md:rounded-2xl outline-none text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value})} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} /></div>
+                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" disabled={newData.item_type === 'hearing_aid'} className={`w-full p-4 rounded-xl text-sm font-bold border border-gray-200 ${newData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50 text-indigo-900'}`} value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value})} /></div>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); }} className="flex-1 py-4 bg-gray-100 rounded-2xl hover:bg-gray-200">취소</button>
-                <button onClick={handleCreateSubmit} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700">할당 완료 및 접수</button>
+              <div className="flex gap-3 shrink-0 pt-4 border-t border-gray-100">
+                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); }} className="flex-1 py-4 bg-gray-100 rounded-2xl">취소</button>
+                <button onClick={handleCreateSubmit} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl shadow-lg">접수 완료</button>
               </div>
             </div>
           </div>
         )}
 
-        {activeModal === 'settlement' && selectedClaim && (
-          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6">
-            <div className="bg-white w-full max-w-sm rounded-3xl p-6 md:p-8 shadow-2xl">
-              <h2 className="text-lg font-black mb-4">정산 입금일 등록</h2>
-              <input type="date" className="w-full p-3 bg-gray-50 rounded-xl mb-6 font-bold" value={depositDate} onChange={e => setDepositDate(e.target.value)} />
-              <div className="flex gap-2">
-                <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-sm">취소</button>
-                <button onClick={async () => {
-                    const { error } = await supabase.from('claims').update({ status: '정산 완료', deposit_date: depositDate }).eq('id', selectedClaim.id);
-                    if (!error) { 
-                      alert('정산 완료 처리되었습니다.'); 
-                      setActiveModal(null); 
-                      const { data: { user } } = await supabase.auth.getUser();
-                      if (user) fetchData(user.id);
-                    }
-                }} className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm">완료</button>
-              </div>
-            </div>
-          </div>
-        )}
-
+        {/* 💡 편집 모달 내 좌/우 편집기 포함 */}
         {activeModal === 'edit' && selectedClaim && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-2xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                <div>
-                  <h4 className="text-xl md:text-2xl font-black text-gray-900">내역 종합 편집</h4>
-                  <p className="text-xs text-gray-400 mt-1">{selectedClaim.customers?.name} 대상자의 교부 데이터를 수정합니다.</p>
-                </div>
+                <div><h4 className="text-xl md:text-2xl font-black text-gray-900">내역 종합 편집</h4><p className="text-xs text-gray-400 mt-1">{selectedClaim.customers?.name} 대상자의 교부 데이터를 수정합니다.</p></div>
                 <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-4">
-                
-                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl md:rounded-2xl mb-5 text-sm flex justify-between items-center shadow-sm">
-                  <span className="text-indigo-900 font-bold">현재 배정 품목</span>
-                  <span className="text-indigo-600 font-black tracking-tight">{selectedClaim.products?.name || '품목 미지정'}</span>
-                </div>
+                {editData.item_type === 'hearing_aid' ? (
+                  <div className="mb-5 border border-indigo-100 p-4 rounded-xl bg-white shadow-sm">
+                    <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">보청기(좌/우) 할당 정보 수정</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className={`p-3 border rounded-xl transition-all ${editData.hearing_aid_details.right.enabled ? 'bg-indigo-50/40 border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                        <div className="flex items-center gap-2 mb-2"><input type="checkbox" className="w-4 h-4 cursor-pointer" checked={editData.hearing_aid_details.right.enabled} onChange={e => handleHearingAidChange('editData', 'right', 'enabled', e.target.checked)} /><span className="text-xs font-black">우측 (Right)</span></div>
+                        <select disabled={!editData.hearing_aid_details.right.enabled} className="w-full text-[11px] p-2 bg-white border border-gray-200 rounded-lg mb-2" value={editData.hearing_aid_details.right.product_id} onChange={e => handleHearingAidChange('editData', 'right', 'product_id', e.target.value)}>
+                          <option value="">보청기 모델 선택...</option>{allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                        <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!editData.hearing_aid_details.right.enabled} className="w-full text-xs p-2 bg-white border border-gray-200 rounded-lg text-right" value={editData.hearing_aid_details.right.price} onChange={e => handleHearingAidChange('editData', 'right', 'price', e.target.value)} /></div>
+                      </div>
+                      <div className={`p-3 border rounded-xl transition-all ${editData.hearing_aid_details.left.enabled ? 'bg-indigo-50/40 border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                        <div className="flex items-center gap-2 mb-2"><input type="checkbox" className="w-4 h-4 cursor-pointer" checked={editData.hearing_aid_details.left.enabled} onChange={e => handleHearingAidChange('editData', 'left', 'enabled', e.target.checked)} /><span className="text-xs font-black">좌측 (Left)</span></div>
+                        <select disabled={!editData.hearing_aid_details.left.enabled} className="w-full text-[11px] p-2 bg-white border border-gray-200 rounded-lg mb-2" value={editData.hearing_aid_details.left.product_id} onChange={e => handleHearingAidChange('editData', 'left', 'product_id', e.target.value)}>
+                          <option value="">보청기 모델 선택...</option>{allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                        </select>
+                        <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!editData.hearing_aid_details.left.enabled} className="w-full text-xs p-2 bg-white border border-gray-200 rounded-lg text-right" value={editData.hearing_aid_details.left.price} onChange={e => handleHearingAidChange('editData', 'left', 'price', e.target.value)} /></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-5 text-sm flex justify-between items-center shadow-sm">
+                    <span className="text-indigo-900 font-bold">현재 배정 품목</span><span className="text-indigo-600 font-black tracking-tight">{selectedClaim.products?.name || '품목 미지정'}</span>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                   <div className="space-y-4 md:space-y-5">
                     <div>
                       <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">기본 정보 & 상태</div>
                       <div className="space-y-3">
-                        <div>
-                          <label className="text-[10px] text-gray-400 uppercase block mb-1">진행 파이프라인 (상태)</label>
-                          <select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>
-                            {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
+                        <div><label className="text-[10px] text-gray-400 uppercase block mb-1">진행 파이프라인 (상태)</label><select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>{STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                        <div className="flex flex-col md:flex-row gap-2">
+                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} /></div>
+                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} /></div>
                         </div>
                         <div className="flex flex-col md:flex-row gap-2">
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} /></div>
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} /></div>
-                        </div>
-                        <div className="flex flex-col md:flex-row gap-2">
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">청구 금액</label><input type="number" className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-mono font-bold text-right" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} /></div>
+                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
+                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled={editData.item_type === 'hearing_aid'} className={`w-full p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200 ${editData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50'}`} value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} /></div>
                         </div>
                       </div>
                     </div>
@@ -1306,59 +1136,50 @@ export default function Claims() {
                     <div>
                       <div className="text-xs text-amber-600 font-black border-b pb-2 mb-3 mt-2">물류 및 배송 정보</div>
                       <div className="flex flex-col md:flex-row gap-2">
-                        <select className="w-full md:w-1/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-700" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}>
-                          <option value="CJ대한통운">CJ대한통운</option><option value="우체국택배">우체국택배</option><option value="롯데택배">롯데택배</option><option value="한진택배">한진택배</option><option value="로젠택배">로젠택배</option><option value="경동택배">경동택배</option><option value="대신택배">대신택배</option><option value="일양로지스">일양로지스</option><option value="천일택배">천일택배</option><option value="건영택배">건영택배</option><option value="CU 편의점택배">CU 편의점택배</option><option value="GS25 편의점택배">GS25 편의점택배</option><option value="직접 배송/설치">직접 배송/설치</option><option value="기타">기타</option>
-                        </select>
-                        <input className="w-full md:w-2/3 bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
+                        <select className="w-full md:w-1/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}><option value="CJ대한통운">CJ대한통운</option><option value="우체국택배">우체국택배</option><option value="롯데택배">롯데택배</option><option value="한진택배">한진택배</option><option value="로젠택배">로젠택배</option><option value="경동택배">경동택배</option><option value="대신택배">대신택배</option><option value="일양로지스">일양로지스</option><option value="천일택배">천일택배</option><option value="건영택배">건영택배</option><option value="CU 편의점택배">CU 편의점택배</option><option value="GS25 편의점택배">GS25 편의점택배</option><option value="직접 배송/설치">직접 배송/설치</option><option value="기타">기타</option></select>
+                        <input className="w-full md:w-2/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
                       </div>
                     </div>
 
                     <div>
                       <div className="text-xs text-rose-600 font-black border-b pb-2 mb-3 mt-2 flex items-center gap-1.5"><FileText size={14}/> 특이사항 및 지연 사유</div>
-                      <textarea className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-medium text-gray-800 resize-none h-24 focus:bg-white focus:border-rose-300 focus:ring-2 focus:ring-rose-100 transition-all placeholder:text-gray-400" placeholder="정산 지연 사유, 고객/지자체 요청사항, 서류 반려 등 특이사항을 입력하세요." value={editData.notes} onChange={e => setEditData({...editData, notes: e.target.value})} />
+                      <textarea className="w-full bg-gray-50 p-3 rounded-xl text-sm font-medium border border-gray-200 resize-none h-24 focus:bg-white focus:border-rose-300" placeholder="정산 지연 사유, 고객 요청사항 등을 입력하세요." value={editData.notes} onChange={e => setEditData({...editData, notes: e.target.value})} />
                     </div>
                   </div>
 
                   <div>
-                    <div className="text-xs text-blue-600 font-black border-b pb-2 mb-3 flex justify-between">
-                      <span>수취 증빙 사진 (교부확인서 삽입)</span>
-                      <span className="text-gray-400 tracking-wider">{photoFiles.length}/3 장</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
+                    <div className="text-xs text-blue-600 font-black border-b pb-2 mb-3 flex justify-between"><span>수취 증빙 사진 (교부확인서 삽입)</span><span className="text-gray-400 tracking-wider">{photoFiles.length}/3 장</span></div>
+                    <div className="grid grid-cols-2 gap-3">
                       {photoFiles.map((src, idx) => (
                         <div key={idx} className="relative group">
                           <img src={src} className="w-full h-28 object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
-                          <button onClick={() => setPhotoFiles(photoFiles.filter((_, i) => i !== idx))} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"><X size={16}/></button>
+                          <button onClick={() => setPhotoFiles(photoFiles.filter((_, i) => i !== idx))} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
                         </div>
                       ))}
-                      
                       {photoFiles.length < 3 && (
-                        <div className="relative border-2 border-dashed border-blue-300 rounded-xl h-28 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 transition-colors cursor-pointer group shadow-sm">
+                        <div className="relative border-2 border-dashed border-blue-300 rounded-xl h-28 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 cursor-pointer group shadow-sm">
                           <input type="file" accept="image/*" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={handlePhotoFilesChange} />
-                          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-sm"><ImagePlus size={18} strokeWidth={2.5} /></div>
-                          <span className="text-[12px] font-black text-blue-600 group-hover:text-blue-800 transition-colors">+ 추가</span>
+                          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white"><ImagePlus size={18} strokeWidth={2.5} /></div>
+                          <span className="text-[12px] font-black text-blue-600 group-hover:text-blue-800">+ 추가</span>
                         </div>
                       )}
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-3 font-bold leading-relaxed break-keep">
-                      * 최대 3장까지 등록 가능하며, 등록 시 서류 인쇄/메일 전송 때 교부확인서 하단에 자동으로 배치됩니다.
-                    </p>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-col md:flex-row gap-3 justify-between border-t pt-4 mt-2 flex-shrink-0">
-                <button onClick={() => handleDelete(selectedClaim.id)} className="w-full md:w-auto px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center justify-center gap-2 transition-colors border border-red-100 text-sm shadow-sm order-last md:order-first"><Trash2 size={16}/> 삭제하기</button>
+                <button onClick={() => handleDelete(selectedClaim.id)} className="w-full md:w-auto px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm order-last md:order-first"><Trash2 size={16}/> 삭제하기</button>
                 <div className="flex gap-2 w-full md:w-auto">
                   <button onClick={() => setActiveModal(null)} className="flex-1 md:flex-none px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 text-sm shadow-sm">취소</button>
-                  <button onClick={handleEditSubmit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-colors text-sm">첨부하기 (저장)</button>
+                  <button onClick={handleEditSubmit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 text-sm">첨부하기 (저장)</button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* 메일 및 인쇄 모달 등 나머지 생략 없이 하단에 유지됨 */}
         {activeModal === 'email' && selectedClaim && (
           <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-5xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1370,53 +1191,43 @@ export default function Claims() {
                 {!isDocPreview ? (
                   <div className="flex flex-col md:grid md:grid-cols-5 h-full overflow-y-auto custom-scrollbar">
                     <div className="md:col-span-3 p-5 md:p-6 space-y-4 md:border-r">
-                      
                       {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
                         <>
                           <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-1">
                             <label className="text-[11px] text-indigo-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
                             <div className="flex gap-2 mt-2">
-                              <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>개인 (본인 계좌)</button>
-                              <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>개인 (가족 계좌)</button>
-                              <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>기업 (업체 위탁)</button>
+                              <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200'}`}>개인 (본인 계좌)</button>
+                              <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200'}`}>개인 (가족 계좌)</button>
+                              <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'email')} className={`flex-1 py-2.5 rounded-lg font-bold text-[13px] border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200'}`}>기업 (업체 위탁)</button>
                             </div>
                           </div>
-                          
-                          {/* 💡 폼 영역 호출 */}
                           {renderDocInputs()}
                         </>
                       )}
-
                       <div className="bg-blue-50/50 p-4 rounded-xl md:rounded-2xl border border-blue-100 space-y-1">
                         <label className="text-[11px] text-blue-600 uppercase font-black block">서류 발행일 선택</label>
                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-1">* 청구서, 위임장 등 문서의 작성일자에 일괄 반영됩니다.</p>
-                        <input type="date" className="w-full bg-white p-2.5 rounded-xl outline-none text-sm font-bold border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+                        <input type="date" className="w-full bg-white p-2.5 rounded-xl border border-blue-200 shadow-sm" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                       </div>
-                      
                       <div className="space-y-2">
                         <label className="text-[11px] text-blue-600 uppercase font-black block">수신자 이메일 설정</label>
                         {getEmailOptions().length > 0 && (
-                          <select className="w-full bg-blue-50/50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-blue-100 transition-colors" onChange={(e) => { if (e.target.value) setEmailData({...emailData, recipient: e.target.value}); }} value={getEmailOptions().includes(emailData.recipient) ? emailData.recipient : ""}>
+                          <select className="w-full bg-blue-50/50 p-3 rounded-xl border border-blue-100" onChange={(e) => { if (e.target.value) setEmailData({...emailData, recipient: e.target.value}); }} value={getEmailOptions().includes(emailData.recipient) ? emailData.recipient : ""}>
                             <option value="" disabled>-- 담당자 선택 --</option>
                             {getEmailOptions().map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
                           </select>
                         )}
-                        <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm text-blue-700 font-bold border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.recipient} onChange={e => setEmailData({...emailData, recipient: e.target.value})} placeholder="수신 이메일 직접 수정/입력 가능" />
+                        <input className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200" value={emailData.recipient} onChange={e => setEmailData({...emailData, recipient: e.target.value})} placeholder="수신 이메일 입력" />
                       </div>
-
-                      <input className="w-full bg-gray-50 p-3 rounded-xl outline-none text-sm font-black text-gray-900 border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
-                      <textarea className="w-full h-32 md:h-48 bg-gray-50 p-3 rounded-xl outline-none text-sm text-gray-800 resize-none font-medium border border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-400 transition-all" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
+                      <input className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200" value={emailData.subject} onChange={e => setEmailData({...emailData, subject: e.target.value})} />
+                      <textarea className="w-full h-32 md:h-48 bg-gray-50 p-3 rounded-xl border border-gray-200 resize-none" value={emailData.content} onChange={e => setEmailData({...emailData, content: e.target.value})} />
                     </div>
                     <div className="md:col-span-2 p-5 md:p-6 bg-gray-50 flex flex-col border-t md:border-t-0">
                       <div className="mb-4 text-xs text-blue-600 uppercase font-black">첨부 서류 선택 (클릭하여 제외 가능)</div>
                       <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                         {getDocsListForClaim(selectedClaim, claimSubject).map(docName => {
                           const isChecked = emailData.files[docName];
-                          return (
-                            <button key={docName} onClick={() => setEmailData({...emailData, files: {...emailData.files, [docName]: !isChecked}})} className={`w-full p-3 rounded-lg border flex justify-between items-center text-xs transition-all ${isChecked ? 'bg-white border-blue-400 text-blue-700 shadow-sm' : 'bg-transparent border-gray-200 text-gray-400'}`}>
-                              <span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}
-                            </button>
-                          );
+                          return (<button key={docName} onClick={() => setEmailData({...emailData, files: {...emailData.files, [docName]: !isChecked}})} className={`w-full p-3 rounded-lg border flex justify-between items-center text-xs transition-all ${isChecked ? 'bg-white border-blue-400 text-blue-700 shadow-sm' : 'bg-transparent border-gray-200 text-gray-400'}`}><span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}</button>);
                         })}
                       </div>
                     </div>
@@ -1425,9 +1236,7 @@ export default function Claims() {
                   <div className="p-4 md:p-6 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
                       {getDocsListForClaim(selectedClaim, claimSubject).filter(docName => emailData.files[docName]).map((fileName, idx) => (
-                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
-                          {renderDocument(fileName, selectedClaim)}
-                        </div>
+                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>{renderDocument(fileName, selectedClaim)}</div>
                       ))}
                     </div>
                   </div>
@@ -1448,43 +1257,34 @@ export default function Claims() {
           <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
              <div className="bg-white w-full max-w-6xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
               <div className="p-5 md:p-6 bg-gray-800 text-white flex justify-between items-center shrink-0">
-                <h4 className="text-lg">{isPrintDocPreview ? '선택한 서류 인쇄 미리보기' : '서류 인쇄 선택'}</h4>
-                <button onClick={() => setActiveModal(null)}><X size={20}/></button>
+                <h4 className="text-lg">{isPrintDocPreview ? '선택한 서류 인쇄 미리보기' : '서류 인쇄 선택'}</h4><button onClick={() => setActiveModal(null)}><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-hidden flex flex-col">
                 {!isPrintDocPreview ? (
                   <div className="p-5 md:p-8 overflow-y-auto bg-gray-50 flex-1 custom-scrollbar">
                     <div className="w-full max-w-2xl mx-auto space-y-4">
-                        
                        {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
                          <>
                            <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
                              <label className="text-[11px] text-gray-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
                              <div className="flex gap-2 mt-2">
-                               <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>개인 (본인 계좌)</button>
-                               <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>개인 (가족 계좌)</button>
-                               <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>기업 (업체 위탁)</button>
+                               <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (본인 계좌)</button>
+                               <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (가족 계좌)</button>
+                               <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>기업 (업체 위탁)</button>
                              </div>
                            </div>
-                           {/* 💡 폼 영역 호출 */}
                            {renderDocInputs()}
                          </>
                        )}
-
                        <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
                          <label className="text-[11px] text-gray-700 uppercase font-black block">서류 발행일 선택</label>
-                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-2">* 청구서, 위임장 등의 작성일자에 일괄 반영됩니다.</p>
-                         <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl outline-none text-sm font-bold border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-2">* 작성일자에 일괄 반영됩니다.</p>
+                         <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
                        </div>
-
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                          {getDocsListForClaim(selectedClaim, claimSubject).map((docName) => {
                            const isChecked = printFiles[docName];
-                           return (
-                             <button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}>
-                               <span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}
-                             </button>
-                           );
+                           return (<button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}><span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}</button>);
                          })}
                        </div>
                     </div>
@@ -1493,9 +1293,7 @@ export default function Claims() {
                   <div className="p-4 md:p-8 bg-gray-300 flex-1 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col gap-6 md:gap-10 max-w-4xl mx-auto items-center pb-10 md:pb-20">
                       {getDocsListForClaim(selectedClaim, claimSubject).filter(docName => printFiles[docName]).map((fileName, idx) => (
-                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>
-                          {renderDocument(fileName, selectedClaim)}
-                        </div>
+                        <div key={idx} className="shadow-xl bg-white w-[210mm] h-[297mm] relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box', transform: 'scale(0.85) md:scale-100', transformOrigin: 'top center' }}>{renderDocument(fileName, selectedClaim)}</div>
                       ))}
                     </div>
                   </div>
@@ -1516,9 +1314,7 @@ export default function Claims() {
       <div className="print-hide-ui" style={{ position: 'absolute', top: '-9999px', left: '-9999px', zIndex: -9999 }}>
         <div ref={pdfContainerRef} style={{ width: '210mm' }}>
           {selectedClaim && Object.keys(emailData.files).filter(k => emailData.files[k]).map((fileName) => (
-            <div key={fileName} data-docname={fileName} className="w-[210mm] h-[297mm] bg-white relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box' }}>
-              {renderDocument(fileName, selectedClaim)}
-            </div>
+            <div key={fileName} data-docname={fileName} className="w-[210mm] h-[297mm] bg-white relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box' }}>{renderDocument(fileName, selectedClaim)}</div>
           ))}
         </div>
       </div>
@@ -1526,9 +1322,7 @@ export default function Claims() {
       {isPrintDocPreview && selectedClaim && (
         <div className="print-page-area">
           {getDocsListForClaim(selectedClaim, claimSubject).filter(docName => printFiles[docName]).map((fileName, idx) => (
-            <div key={idx} className="print-page-break">
-              {renderDocument(fileName, selectedClaim)}
-            </div>
+            <div key={idx} className="print-page-break">{renderDocument(fileName, selectedClaim)}</div>
           ))}
         </div>
       )}
