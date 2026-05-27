@@ -19,7 +19,7 @@ import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
 
 // -------------------------------------------------------------
-// 🚀 핵심 해결 로직 1: 백그라운드 탭 절전 모드를 우회하는 강력한 세션 타이머
+// 🚀 핵심 해결 로직 1: 사용자 30분 미활동 시에만 작동하는 '진짜' 자동 로그아웃 타이머
 // -------------------------------------------------------------
 function SessionTimeoutHandler({ children }) {
   const TIMEOUT_DURATION = 30 * 60 * 1000; // 정확히 30분 (밀리초)
@@ -45,7 +45,7 @@ function SessionTimeoutHandler({ children }) {
 
   const updateActivity = useCallback(() => {
     const now = Date.now();
-    // 💡 브라우저 과부하 방지: 마우스를 움직일 때마다 저장하지 않고 2초에 한 번만 저장
+    // 브라우저 과부하 방지: 마우스를 움직일 때마다 저장하지 않고 2초에 한 번만 갱신
     if (now - lastWriteRef.current > 2000) {
       localStorage.setItem('lastActivityTime', now.toString());
       lastWriteRef.current = now;
@@ -57,34 +57,30 @@ function SessionTimeoutHandler({ children }) {
     if (!lastActivityStr) return;
 
     const lastActivity = parseInt(lastActivityStr, 10);
-    // 기록된 마지막 시간과 현재 시간을 비교하여 30분이 넘었으면 즉시 로그아웃
+    // 기록된 마지막 시간과 현재 시간을 비교하여 진짜 30분이 넘었을 때만 로그아웃
     if (Date.now() - lastActivity > TIMEOUT_DURATION) {
       handleLogout();
     }
   }, [handleLogout, TIMEOUT_DURATION]);
 
   useEffect(() => {
-    updateActivity(); // 첫 렌더링 시 활동 시간 갱신
+    updateActivity();
 
-    // 1. 최소한의 방어 장치로 30초마다 체크
     const intervalId = setInterval(checkTimeout, 30000);
 
-    // 2. 사용자가 다른 사이트나 앱을 보다가 다시 탭으로 돌아왔을 때의 처리
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        checkTimeout(); // 30분이 넘었는지 먼저 체크
-        updateActivity(); // 안 넘었다면 돌아온 행위 자체를 '활동'으로 간주하여 연장
+        checkTimeout();
+        updateActivity(); 
       }
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
 
-    // 3. 실제 사용자 활동 감지 이벤트 등록 (passive 옵션으로 성능 최적화)
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
     events.forEach(event => document.addEventListener(event, updateActivity, { passive: true }));
 
-    // 클린업 함수
     return () => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -230,6 +226,7 @@ export default function App() {
   const [companyName, setCompanyName] = useState(''); 
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
 
+  // 권한 및 업체명 세팅 함수
   const loadUserData = async (user) => {
     if (!user) {
       setIsAdmin(false);
@@ -265,28 +262,30 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    // 💡 핵심 해결 로직 2: 초기 인증 시 getSession 대신 getUser를 사용하여 무조건 서버 검증
+    // 💡 초기 인증 (무조건 서버에서 getUser로 토큰을 갱신 및 검증)
     const initializeAuth = async () => {
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
+        
         if (error || !user) {
           setSession(null);
         } else {
           const { data: { session: validSession } } = await supabase.auth.getSession();
           setSession(validSession);
-          // 💡 핵심: loadUserData가 완료될 때까지 기다립니다 (await 추가)
-          await loadUserData(user.id);
+          await loadUserData(user); // user 객체를 전달
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        // 모든 작업이 끝난 후 로딩 해제
         if (isMounted) setIsCheckingAdmin(false); 
       }
     };
 
     initializeAuth();
 
+    // -------------------------------------------------------------
+    // 🚀 핵심 해결 로직 2: Supabase의 가짜 SIGNED_OUT 이벤트 원천 차단
+    // -------------------------------------------------------------
     const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!isMounted) return;
       if (event === 'INITIAL_SESSION') return;
@@ -297,16 +296,21 @@ export default function App() {
           await loadUserData(currentSession.user);
         }
       } else if (event === 'SIGNED_OUT') {
-        // 💡 핵심 해결 로직 3: 가짜 로그아웃 방어 (더블 체크 로직)
-        // 탭 이동 복귀 시 브라우저 절전 모드로 인해 Supabase 통신이 일시적으로 끊겨 
-        // 억울하게 SIGNED_OUT 이벤트가 발생하는 버그를 차단합니다.
-        const { data } = await supabase.auth.getSession();
         
-        // 실제로 세션 데이터가 완전히 지워진(진짜 로그아웃) 경우에만 상태 초기화
-        if (!data.session) {
+        // 브라우저 탭 절전 모드 복귀 시 발생하는 '가짜 로그아웃(False Alarm)'을 차단합니다.
+        // 이벤트를 맹신하지 않고, 서버에 한 번 더 강제로 물어봅니다.
+        const { data: { user }, error } = await supabase.auth.getUser();
+        
+        if (error || !user) {
+          // 서버에서도 죽었다고 판단하면 비로소 진짜 로그아웃 처리
           setSession(null);
           setIsAdmin(false);
           setCompanyName('');
+        } else {
+          // 서버에서 유효한 유저를 살려냈다면(Refresh 성공), 세션을 즉시 복구합니다!
+          const { data: { session: recoveredSession } } = await supabase.auth.getSession();
+          setSession(recoveredSession);
+          await loadUserData(user);
         }
       }
     });
@@ -335,7 +339,6 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      {/* 💡 서버에서 검증된 session이 없을 경우 무조건 로그인 화면(AuthPage)으로 강제 렌더링 */}
       {!session ? (
         <AuthPage />
       ) : (
