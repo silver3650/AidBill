@@ -265,20 +265,23 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
+    // 💡 핵심 해결 로직 2: 초기 인증 시 getSession 대신 getUser를 사용하여 무조건 서버 검증
     const initializeAuth = async () => {
       try {
-        const { data: sessionData, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        
-        const initialSession = sessionData?.session;
-        if (initialSession) {
-          setSession(initialSession);
-          await loadUserData(initialSession.user);
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          setSession(null);
+        } else {
+          const { data: { session: validSession } } = await supabase.auth.getSession();
+          setSession(validSession);
+          // 💡 핵심: loadUserData가 완료될 때까지 기다립니다 (await 추가)
+          await loadUserData(user.id);
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        setIsCheckingAdmin(false); 
+        // 모든 작업이 끝난 후 로딩 해제
+        if (isMounted) setIsCheckingAdmin(false); 
       }
     };
 
@@ -294,10 +297,8 @@ export default function App() {
           await loadUserData(currentSession.user);
         }
       } else if (event === 'SIGNED_OUT') {
-        // -------------------------------------------------------------
-        // 🚀 핵심 해결 로직 2: 가짜 로그아웃 방어 (더블 체크 로직)
-        // -------------------------------------------------------------
-        // 탭 이동 복귀 시 브라우저 절전 모드로 인해 Supabase 통신이 끊겨 
+        // 💡 핵심 해결 로직 3: 가짜 로그아웃 방어 (더블 체크 로직)
+        // 탭 이동 복귀 시 브라우저 절전 모드로 인해 Supabase 통신이 일시적으로 끊겨 
         // 억울하게 SIGNED_OUT 이벤트가 발생하는 버그를 차단합니다.
         const { data } = await supabase.auth.getSession();
         
@@ -311,7 +312,7 @@ export default function App() {
     });
 
     const timeoutId = setTimeout(() => {
-      setIsCheckingAdmin(false);
+      if (isMounted) setIsCheckingAdmin(false);
     }, 5000);
 
     return () => {
@@ -334,6 +335,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {/* 💡 서버에서 검증된 session이 없을 경우 무조건 로그인 화면(AuthPage)으로 강제 렌더링 */}
       {!session ? (
         <AuthPage />
       ) : (
