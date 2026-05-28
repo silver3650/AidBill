@@ -1,12 +1,11 @@
 import React from 'react';
 
 export default function BenefitClaimFormDoc({ data }) {
-  // 1. 빈자리를 채워줄 기본(샘플) 데이터
   const dummyData = {
     claim_date: '2026-05-24',
     customer: {
       name: '홍길동',
-      resident_number: '800101-1234567',
+      resident_number: '[RRN Omitted]',
       phone: '02-123-4567',
       mobile: '010-1234-5678',
       disability_type: '지체장애',
@@ -46,7 +45,7 @@ export default function BenefitClaimFormDoc({ data }) {
     },
     claimant: {
       name: '이순신',
-      resident_number: '700101-1234567',
+      resident_number: '[RRN Omitted]',
       relation: '배우자',
       phone: '02-321-7654',
       mobile: '010-4321-8765'
@@ -62,7 +61,6 @@ export default function BenefitClaimFormDoc({ data }) {
 
   const activeData = data || {};
 
-  // 💡 데이터 매핑 오류 수정: DB의 원본 키(company_name 등)를 서식 키(name)로 번역하여 매핑
   const customerData = activeData.customer || {};
   const customer = {
     name: customerData.name || dummyData.customer.name,
@@ -97,9 +95,6 @@ export default function BenefitClaimFormDoc({ data }) {
     mfg_date: activeData.mfg_date || prodData.mfg_date || dummyData.product.mfg_date,
     serial_no: prodData.serial_no || dummyData.product.serial_no,
     std_code: prodData.std_code || dummyData.product.std_code,
-    base_price: prodData.base_price || prodData.price || dummyData.product.base_price,
-    notice_price: prodData.notice_price || prodData.price || dummyData.product.notice_price,
-    actual_price: activeData.total_amount || dummyData.product.actual_price,
   };
 
   const accountData = activeData.account || {};
@@ -127,13 +122,11 @@ export default function BenefitClaimFormDoc({ data }) {
 
   const claim_date = activeData.claim_date || dummyData.claim_date;
   
-  // 💡 청구 주체 3단계 분류
   const claimSubject = activeData.claimSubject || '기업 (업체 위탁 청구)';
   const isSelfClaim = claimSubject === '개인 (본인 계좌 청구)';
   const isFamilyClaim = claimSubject === '개인 (가족 계좌 청구)';
   const isCompanyClaim = claimSubject === '기업 (업체 위탁 청구)';
 
-  // 💡 ⑩ 수령 계좌 동적 매핑
   let displayBank = '';
   let displayAccountNum = '';
   let displayHolder = '';
@@ -156,7 +149,6 @@ export default function BenefitClaimFormDoc({ data }) {
     displayIdNum = customer?.resident_number;
   }
 
-  // 💡 ⑪ 하단 청구인 서명란 동적 매핑
   let finalClaimantName = '';
   let finalClaimantSign = null;
   let finalClaimantRRN = '';
@@ -165,50 +157,43 @@ export default function BenefitClaimFormDoc({ data }) {
 
   if (isCompanyClaim) {
     finalClaimantName = company?.name;
-    finalClaimantSign = signatures?.company_seal; // 직인 삽입
+    finalClaimantSign = signatures?.company_seal;
     finalClaimantRRN = company?.business_number;
     finalClaimantRel = '판매업자';
     finalClaimantPhone = company?.phone || company?.mobile;
   } else if (isFamilyClaim) {
     finalClaimantName = claimant?.name;
-    finalClaimantSign = signatures?.claimant_sign; // 가족 서명 삽입
+    finalClaimantSign = signatures?.claimant_sign;
     finalClaimantRRN = claimant?.resident_number;
     finalClaimantRel = claimant?.relation;
     finalClaimantPhone = claimant?.mobile || claimant?.phone;
   } else {
     finalClaimantName = customer?.name;
-    finalClaimantSign = signatures?.customer_sign; // 수급자(본인) 서명 삽입
+    finalClaimantSign = signatures?.customer_sign;
     finalClaimantRRN = customer?.resident_number;
     finalClaimantRel = '본인';
     finalClaimantPhone = customer?.mobile || customer?.phone;
   }
 
-  // 💡 ⑧, ⑨ 금액 자동 계산 로직 (건강보험 대상자일 경우)
-  let displaySelfBurden = product?.self_burden_price ? `${product.self_burden_price} 원` : '';
-  let displayClaimAmount = product?.claim_price ? `${product.claim_price} 원` : '';
+  const baseP = prodData.standard_price || 0;
+  const noticeP = prodData.price || 0;
+  const actualP = activeData.total_amount || 0;
 
-  if (customer?.qualification === '건강보험' || customer?.qualification === '경감(건강보험)') {
-    const baseP = Number(product?.base_price?.toString().replace(/,/g, '')) || 0;
-    const noticeP = Number(product?.notice_price?.toString().replace(/,/g, '')) || 0;
-    const actualP = Number(product?.actual_price?.toString().replace(/,/g, '')) || 0;
-    
-    // 0보다 큰 금액들 중에서 최저가 산출
-    const validPrices = [baseP, noticeP, actualP].filter(p => p > 0);
-    if (validPrices.length > 0) {
-      const lowestPrice = Math.min(...validPrices);
-      const calcSelfBurden = Math.floor(lowestPrice * 0.1); // 10% 본인부담
-      const calcClaim = lowestPrice - calcSelfBurden;       // 나머지 청구금액
-      
-      displaySelfBurden = `${calcSelfBurden.toLocaleString()} 원`;
-      displayClaimAmount = `${calcClaim.toLocaleString()} 원`;
-    }
+  let displayBasePrice = baseP ? `${baseP.toLocaleString()} 원` : '';
+  let displayNoticePrice = noticeP ? `${noticeP.toLocaleString()} 원` : '';
+  let displayActualPrice = actualP ? `${actualP.toLocaleString()} 원` : '';
+  let displaySelfBurden = '';
+  let displayClaimAmount = '';
+
+  if (activeData.calculated_copay !== undefined && activeData.calculated_claim_amount !== undefined) {
+    displaySelfBurden = `${activeData.calculated_copay.toLocaleString()} 원`;
+    displayClaimAmount = `${activeData.calculated_claim_amount.toLocaleString()} 원`;
   }
 
-  // 날짜 파싱
   const dateParts = claim_date ? claim_date.split('-') : ['    ', '  ', '  '];
 
-  const TableCell = ({ children, className = "", ...props }) => (
-    <td className={`border border-slate-800 p-[3px] align-middle ${className}`} {...props}>
+  const TableCell = ({ children, className = "", style = {}, ...props }) => (
+    <td className={`border border-slate-800 p-[3px] text-center ${className}`} style={{ verticalAlign: 'middle', ...style }} {...props}>
       {children}
     </td>
   );
@@ -220,7 +205,10 @@ export default function BenefitClaimFormDoc({ data }) {
   );
 
   return (
-    <div className="bg-white w-[210mm] h-[297mm] p-[15mm] text-slate-900 font-sans text-[11px] box-border relative flex flex-col justify-between overflow-hidden">
+    <div 
+      className="bg-white w-[210mm] h-[297mm] p-[15mm] text-slate-900 font-sans text-[11px] box-border relative flex flex-col overflow-hidden print:break-after-page print:overflow-visible shrink-0"
+      style={{ pageBreakAfter: 'always', pageBreakInside: 'avoid' }}
+    >
       
       <div className="shrink-0">
         <div className="text-[10px] text-left mb-0.5 text-slate-700">■ 국민건강보험법 시행규칙 [별지 제21호서식]</div>
@@ -232,19 +220,19 @@ export default function BenefitClaimFormDoc({ data }) {
       </div>
 
       {/* 접수 정보 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 shrink-0">
         <tbody>
-          <tr className="h-4 bg-slate-200">
-            <TableCell className="w-[16%] font-bold text-left px-2 border-r-0">접수번호</TableCell>
+          <tr className="bg-slate-200">
+            <TableCell className="w-[16%] font-bold px-2 border-r-0" style={{ textAlign: 'left' }}>접수번호</TableCell>
             <TableCell className="border-l-0 w-auto"></TableCell>
-            <TableCell className="font-bold text-left px-2 border-r-0 w-[60px]">접수일</TableCell>
+            <TableCell className="font-bold px-2 border-r-0 w-[60px]" style={{ textAlign: 'left' }}>접수일</TableCell>
             <TableCell className="border-l-0 w-auto"></TableCell>
-            <TableCell className="font-bold text-left border-r-0 w-[60px]">처리기간</TableCell>
-            <TableCell className="text-left border-l-0 w-[100px] bg-slate-200">7일</TableCell>
+            <TableCell className="font-bold border-r-0 w-[60px]" style={{ textAlign: 'left' }}>처리기간</TableCell>
+            <TableCell className="border-l-0 w-[100px] bg-slate-200" style={{ textAlign: 'left' }}>7일</TableCell>
           </tr>
           <tr>
             <TableCell className="w-[16%] font-bold leading-tight py-1 bg-slate-200">본인부담액<br/>경감 대상자</TableCell>
-            <TableCell colSpan="5" className="text-left px-4 leading-tight bg-slate-200 py-1">
+            <TableCell colSpan="5" className="px-4 leading-tight bg-slate-200 py-1" style={{ textAlign: 'left' }}>
               [ <CheckBox checked={false} /> ] 「국민건강보험법 시행령」 별표 2 제3호라목1)에 해당하는 사람<br/>
               [ <CheckBox checked={false} /> ] 「국민건강보험법 시행령」 별표 2 제3호라목2)에 해당하는 사람
             </TableCell>
@@ -253,26 +241,26 @@ export default function BenefitClaimFormDoc({ data }) {
       </table>
 
       {/* ① 급여를 받을 사람 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 shrink-0">
         <tbody>
           <tr>
             <TableCell rowSpan="3" className="w-[16%] font-bold bg-slate-100 leading-snug">① 급여를<br/>받을 사람</TableCell>
             <TableCell className="bg-slate-100 font-bold w-[12%]">성명</TableCell>
             <TableCell className="w-[20%]">{customer?.name}</TableCell>
             <TableCell className="bg-slate-100 font-bold w-[20%]">주민(외국인)등록번호</TableCell>
-            <TableCell className="w-[32%] text-left px-2">{customer?.resident_number}</TableCell>
+            <TableCell className="w-[32%] px-2" style={{ textAlign: 'left' }}>{customer?.resident_number}</TableCell>
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold">자택 전화번호</TableCell>
             <TableCell>{customer?.phone}</TableCell>
             <TableCell className="bg-slate-100 font-bold">휴대전화 번호</TableCell>
-            <TableCell className="text-left px-2">{customer?.mobile}</TableCell>
+            <TableCell className="px-2" style={{ textAlign: 'left' }}>{customer?.mobile}</TableCell>
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold">장애명</TableCell>
             <TableCell>{customer?.disability_type}</TableCell>
             <TableCell className="bg-slate-100 font-bold">장애 정도</TableCell>
-            <TableCell className="text-left px-2 whitespace-nowrap">
+            <TableCell className="px-2 whitespace-nowrap" style={{ textAlign: 'left' }}>
               [ <CheckBox checked={customer?.disability_level === '심한장애' || customer?.disability_level === '심함'} /> ] 심한 장애 &nbsp;&nbsp;&nbsp; 
               [ <CheckBox checked={customer?.disability_level === '심하지않은장애' || customer?.disability_level === '심하지 않음'} /> ] 심하지 않은 장애
             </TableCell>
@@ -281,7 +269,7 @@ export default function BenefitClaimFormDoc({ data }) {
       </table>
 
       {/* ② 보조기기 (제품정보) */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center table-fixed shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 table-fixed shrink-0">
         <tbody>
           <tr>
             <TableCell rowSpan="3" className="w-[16%] font-bold bg-slate-100 leading-snug">② 보조기기<br/><span className="font-normal text-[10px]">(제품정보)</span></TableCell>
@@ -308,7 +296,7 @@ export default function BenefitClaimFormDoc({ data }) {
       </table>
 
       {/* ③ 급여를 받을 사람 외 청구인 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center table-fixed shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 table-fixed shrink-0">
         <tbody>
           <tr>
             <TableCell rowSpan="4" className="w-[16%] font-bold bg-slate-100 leading-snug">③ 급여를 받을<br/>사람 외 청구인</TableCell>
@@ -322,8 +310,8 @@ export default function BenefitClaimFormDoc({ data }) {
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold">연락처</TableCell>
-            <TableCell colSpan="2" className="text-left px-2 border-r-0">(자택) {isFamilyClaim ? claimant?.phone : ''}</TableCell>
-            <TableCell colSpan="3" className="text-left px-2 border-l-0">(휴대전화) {isFamilyClaim ? claimant?.mobile : ''}</TableCell>
+            <TableCell colSpan="2" className="px-2 border-r-0" style={{ textAlign: 'left' }}>(자택) {isFamilyClaim ? claimant?.phone : ''}</TableCell>
+            <TableCell colSpan="3" className="px-2 border-l-0" style={{ textAlign: 'left' }}>(휴대전화) {isFamilyClaim ? claimant?.mobile : ''}</TableCell>
           </tr>
           <tr>
             <TableCell rowSpan="2" className="bg-slate-100 font-bold leading-tight px-0">판매<br/>업자</TableCell>
@@ -338,8 +326,8 @@ export default function BenefitClaimFormDoc({ data }) {
           </tr>
           <tr>
             <TableCell className="bg-slate-100 font-bold">연락처</TableCell>
-            <TableCell colSpan="2" className="text-left px-2 border-r-0">(업소) {isCompanyClaim ? company?.phone : ''}</TableCell>
-            <TableCell colSpan="3" className="text-left px-2 border-l-0">(휴대전화) {isCompanyClaim ? company?.mobile : ''}</TableCell>
+            <TableCell colSpan="2" className="px-2 border-r-0" style={{ textAlign: 'left' }}>(업소) {isCompanyClaim ? company?.phone : ''}</TableCell>
+            <TableCell colSpan="3" className="px-2 border-l-0" style={{ textAlign: 'left' }}>(휴대전화) {isCompanyClaim ? company?.mobile : ''}</TableCell>
           </tr>
         </tbody>
       </table>
@@ -350,32 +338,32 @@ export default function BenefitClaimFormDoc({ data }) {
       </div>
 
       {/* ④ 구입처 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center table-fixed shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 table-fixed shrink-0">
         <tbody>
           <tr>
             <TableCell rowSpan="3" className="w-[16%] font-bold bg-slate-100">④ 구입처</TableCell>
-            <TableCell className="w-[14%] bg-slate-100 font-bold text-left px-2 border-r-0">상호</TableCell>
-            <TableCell colSpan="2" className="w-[28%] border-l-0 text-left px-2">{company?.name}</TableCell>
-            <TableCell className="w-[15%] bg-slate-100 font-bold text-left px-2 border-r-0">대표자</TableCell>
-            <TableCell className="w-[27%] border-l-0 text-left px-2">{company?.representative}</TableCell>
+            <TableCell className="w-[14%] bg-slate-100 font-bold px-2 border-r-0" style={{ textAlign: 'left' }}>상호</TableCell>
+            <TableCell colSpan="2" className="w-[28%] border-l-0 px-2" style={{ textAlign: 'left' }}>{company?.name}</TableCell>
+            <TableCell className="w-[15%] bg-slate-100 font-bold px-2 border-r-0" style={{ textAlign: 'left' }}>대표자</TableCell>
+            <TableCell className="w-[27%] border-l-0 px-2" style={{ textAlign: 'left' }}>{company?.representative}</TableCell>
           </tr>
           <tr>
-            <TableCell className="bg-slate-100 font-bold text-left px-2 border-r-0">사업자등록번호</TableCell>
-            <TableCell colSpan="2" className="border-l-0 text-left px-2">{company?.business_number}</TableCell>
-            <TableCell className="bg-slate-100 font-bold text-left px-2 border-r-0">전화번호</TableCell>
-            <TableCell className="border-l-0 text-left px-2">{company?.phone}</TableCell>
+            <TableCell className="bg-slate-100 font-bold px-2 border-r-0" style={{ textAlign: 'left' }}>사업자등록번호</TableCell>
+            <TableCell colSpan="2" className="border-l-0 px-2" style={{ textAlign: 'left' }}>{company?.business_number}</TableCell>
+            <TableCell className="bg-slate-100 font-bold px-2 border-r-0" style={{ textAlign: 'left' }}>전화번호</TableCell>
+            <TableCell className="border-l-0 px-2" style={{ textAlign: 'left' }}>{company?.phone}</TableCell>
           </tr>
           <tr>
-            <TableCell colSpan="2" className="bg-slate-100 font-bold text-left px-2 border-r-0 whitespace-nowrap">
+            <TableCell colSpan="2" className="bg-slate-100 font-bold px-2 border-r-0 whitespace-nowrap" style={{ textAlign: 'left' }}>
               주소<span className="font-normal"> (미등록 업소만 기록합니다)</span>
             </TableCell>
-            <TableCell colSpan="3" className="text-left px-2 border-l-0">{company?.address}</TableCell>
+            <TableCell colSpan="3" className="px-2 border-l-0" style={{ textAlign: 'left' }}>{company?.address}</TableCell>
           </tr>
         </tbody>
       </table>
 
       {/* ⑤~⑨ 금액 정보 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 text-center shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-1 shrink-0">
         <tbody>
           <tr className="bg-slate-100 font-bold">
             <TableCell className="w-[16%]">⑤ 기준액</TableCell>
@@ -384,38 +372,38 @@ export default function BenefitClaimFormDoc({ data }) {
             <TableCell className="w-[21%]">⑧ 본인부담액</TableCell>
             <TableCell className="w-[21%]">⑨ 청구금액</TableCell>
           </tr>
-          <tr className="h-[18px]">
-            <TableCell className="text-right px-2">{product?.base_price ? `${product.base_price} 원` : ''}</TableCell>
-            <TableCell className="text-right px-2">{product?.notice_price ? `${product.notice_price} 원` : ''}</TableCell>
-            <TableCell className="text-right px-2">{product?.actual_price ? `${product.actual_price} 원` : ''}</TableCell>
-            <TableCell className="text-right px-2">{displaySelfBurden}</TableCell>
-            <TableCell className="text-right px-2">{displayClaimAmount}</TableCell>
+          <tr>
+            <TableCell className="px-2 py-1" style={{ textAlign: 'right' }}>{displayBasePrice}</TableCell>
+            <TableCell className="px-2 py-1" style={{ textAlign: 'right' }}>{displayNoticePrice}</TableCell>
+            <TableCell className="px-2 py-1" style={{ textAlign: 'right' }}>{displayActualPrice}</TableCell>
+            <TableCell className="px-2 py-1" style={{ textAlign: 'right' }}>{displaySelfBurden}</TableCell>
+            <TableCell className="px-2 py-1" style={{ textAlign: 'right' }}>{displayClaimAmount}</TableCell>
           </tr>
-          <tr className="h-[18px]"><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell></tr>
-          <tr className="h-[18px]"><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell><TableCell className="text-right px-2"></TableCell></tr>
+          <tr><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell></tr>
+          <tr><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell><TableCell className="px-2 py-1" style={{ textAlign: 'right' }}></TableCell></tr>
         </tbody>
       </table>
 
       {/* ⑩ 수령 계좌 */}
-      <table className="w-full border-collapse border-[1px] border-slate-800 mb-2 text-center shrink-0">
+      <table className="w-full border-collapse border-[1px] border-slate-800 mb-2 shrink-0">
         <tbody>
           <tr>
             <TableCell rowSpan="3" className="w-[8%] font-bold bg-slate-100 leading-snug">⑩<br/>수령<br/>계좌</TableCell>
-            <TableCell className="text-left px-2 w-[36%]">
+            <TableCell className="px-2 w-[36%]" style={{ textAlign: 'left' }}>
               [ <CheckBox checked={isSelfClaim || isFamilyClaim} /> ] 가입자 또는 피부양자 계좌
             </TableCell>
-            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[10%]">금융기관명</TableCell>
-            <TableCell rowSpan="2" className="w-[10%]">{displayBank}</TableCell>
-            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[18%]">계좌번호</TableCell>
-            <TableCell rowSpan="2" className="w-[18%]">{displayAccountNum}</TableCell>
+            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[9%]">금융기관명</TableCell>
+            <TableCell rowSpan="2" className="w-[13%]">{displayBank}</TableCell>
+            <TableCell rowSpan="2" className="bg-slate-100 font-bold w-[17%]">계좌번호</TableCell>
+            <TableCell rowSpan="2" className="w-[17%]">{displayAccountNum}</TableCell>
           </tr>
           <tr>
-            <TableCell className="text-left px-2">
+            <TableCell className="px-2" style={{ textAlign: 'left' }}>
               [ <CheckBox checked={isCompanyClaim} /> ] 보조기기 판매업자 계좌
             </TableCell>
           </tr>
           <tr>
-            <TableCell className="text-left px-2 leading-tight">
+            <TableCell className="px-2 leading-tight" style={{ textAlign: 'left' }}>
               [ <CheckBox checked={false} /> ] 급여를 받을 사람 본인의 요양비등 수급계좌<br/>
               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(압류방지 계좌)
             </TableCell>
@@ -482,10 +470,10 @@ export default function BenefitClaimFormDoc({ data }) {
             </td>
           </tr>
           <tr>
-            <td className="font-bold text-right py-2 px-2 w-[70%] text-[11px]">
+            <td className="font-bold py-2 px-2 w-[70%]" style={{ textAlign: 'right' }}>
               급여를 받을 사람
             </td>
-            <td className="text-center relative py-2 px-2 w-[30%] text-[11px]">
+            <td className="text-center relative py-2 px-2 w-[30%]">
               {customer?.name} &nbsp;&nbsp; 
               <span className="relative inline-flex items-center justify-center">
                 {signatures?.customer_sign && (
@@ -498,6 +486,7 @@ export default function BenefitClaimFormDoc({ data }) {
         </tbody>
       </table>
 
+      {/* mt-auto가 이미 존재하므로 이 요소가 남은 공간을 밀어내어 하단 정렬을 유지시킵니다. */}
       <div className="text-[9px] text-right text-slate-500 tracking-wider shrink-0 mt-auto">
         210mm×297mm[백상지(80g/㎡) 또는 중질지(80g/㎡)]
       </div>

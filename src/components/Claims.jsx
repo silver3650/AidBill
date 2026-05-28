@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Search, Truck, X, Package, Mail, Printer, Edit3, Trash2, 
-  CheckSquare, Square, Eye, Send, Clock, Calendar, Filter, RefreshCw, ArrowLeft, Plus, ImagePlus, CheckCircle2, Camera, ChevronLeft, ChevronRight, AlertTriangle, FileText, PenTool
+  CheckSquare, Square, Eye, Send, Clock, Calendar, Filter, RefreshCw, ArrowLeft, Plus, ImagePlus, CheckCircle2, Camera, ChevronLeft, ChevronRight, AlertTriangle, FileText, PenTool, Loader2
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import html2canvas from 'html2canvas';
@@ -17,7 +18,6 @@ import TransactionDoc from '../components/documents/TransactionDoc';
 import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc';
 import Contracts from '../components/documents/Contracts'; 
 
-// 스마트 전자 서명 패드 컴포넌트
 const SignaturePad = ({ onSave }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -141,12 +141,14 @@ export default function Claims() {
   const [editData, setEditData] = useState({ 
     claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
     notes: '', purchase_date: '', mfg_date: '', 
+    prescription_image: '', inspection_image: '', purchase_proof_image: '', id_card_image: '',
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
   });
   
   const [photoFiles, setPhotoFiles] = useState([]); 
   const [emailData, setEmailData] = useState({ recipient: '', sender: '', subject: '', content: '', files: {} });
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false); 
   const [isDocPreview, setIsDocPreview] = useState(false); 
 
   const [printFiles, setPrintFiles] = useState({});
@@ -161,9 +163,47 @@ export default function Claims() {
 
   const pdfContainerRef = useRef(null);
 
-  const LOCAL_GOV_DOCS = ['교부비용청구서', '교부확인서', '사업자등록증', '계좌사본', '물품인수증', '견적서', '거래명세서', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'];
-  const NHIS_PERSONAL_DOCS = ['보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)'];
-  const NHIS_COMPANY_DOCS = ['보조기기 급여 지급청구서', '검수확인서', '신분증 및 복지카드 사본', '교부 사진 (기기전체 및 바코드)', '구매 증빙서류 (세금계산서 등)', '위임장', '교부(판매)업체 자격사항 서류'];
+  const LOCAL_GOV_DOCS = [
+    '교부비용청구서', '물품인수증', '견적서', '거래명세서', '계좌사본', '사업자등록증', '기타 첨부(교부사진, 배송추적 캡쳐본 등)'
+  ];
+  
+  const NHIS_PERSONAL_DOCS = [
+    '보조기기 급여 지급청구서',
+    '교부 사진 (기기전체 및 바코드)',
+    '처방전',
+    '검수확인서',
+    '구매 증빙서류 (세금계산서 등)',
+    '거래명세서', 
+    '신분증 및 복지카드 사본',
+    '사업자등록증'
+  ];
+
+  const NHIS_COMPANY_DOCS = [
+    '보조기기 급여 지급청구서',
+    '교부 사진 (기기전체 및 바코드)',
+    '처방전',
+    '검수확인서',
+    '구매 증빙서류 (세금계산서 등)',
+    '거래명세서',
+    '위임장',
+    '신분증 및 복지카드 사본',
+    '사업자등록증',
+    '교부(판매)업체 자격사항 서류'
+  ];
+
+  const isNHISClaim = (claim) => {
+    const qual = claim?.customers?.qualification;
+    return qual === '건강보험' || qual === '경감(건강보험)';
+  };
+
+  const isPrescriptionRequired = (product, itemType, isNHIS) => {
+    if (!isNHIS) return false; 
+    if (itemType === 'hearing_aid') return true; 
+    if (!product) return false;
+    const textToCheck = `${product.category || ''} ${product.name || ''}`.toLowerCase();
+    const requiredKeywords = ['휠체어', '스쿠터', '보청기', '자세보조용구', '의지', '보조기', '교정용 신발', '이동식전동리프트'];
+    return requiredKeywords.some(keyword => textToCheck.includes(keyword));
+  };
 
   const isInspectionExempt = (product) => {
     if (!product) return false;
@@ -173,14 +213,15 @@ export default function Claims() {
   };
 
   const getDocsListForClaim = (claim, subject = claimSubject) => {
-    const qual = claim?.customers?.qualification;
+    const isNHIS = isNHISClaim(claim);
     let docs = [];
-    if (qual === '건강보험' || qual === '경감(건강보험)') {
+    if (isNHIS) {
       docs = subject.includes('기업') ? [...NHIS_COMPANY_DOCS] : [...NHIS_PERSONAL_DOCS];
+      if (isInspectionExempt(claim?.products)) docs = docs.filter(doc => doc !== '검수확인서');
+      if (!isPrescriptionRequired(claim?.products, claim?.item_type, isNHIS)) docs = docs.filter(doc => doc !== '처방전');
     } else {
       docs = [...LOCAL_GOV_DOCS];
     }
-    if (isInspectionExempt(claim?.products)) docs = docs.filter(doc => doc !== '검수확인서');
     return docs;
   };
 
@@ -292,7 +333,11 @@ export default function Claims() {
         return {
           ...h, customers: customerWithGov, hearing_aid_details: parsedHearing,
           products: { ...matchedDevice, name: fullProductName, purchase_date: h.purchase_date || matchedDevice?.purchase_date || '', mfg_date: h.mfg_date || matchedDevice?.mfg_date || '' },
-          status: mappedStatus, receipt_photos: parsedPhotos 
+          status: mappedStatus, receipt_photos: parsedPhotos, 
+          prescription_image: h.prescription_image || null,
+          inspection_image: h.inspection_image || null,
+          purchase_proof_image: h.purchase_proof_image || null,
+          id_card_image: h.id_card_image || null
         };
       });
       setClaims(merged || []);
@@ -367,7 +412,6 @@ export default function Claims() {
     }
   };
 
-  // 💡 좌/우 보청기 상태 관리 핸들러
   const handleHearingAidChange = (target, ear, field, value) => {
     const updateFn = target === 'newData' ? setNewData : setEditData;
     updateFn(prev => {
@@ -460,6 +504,10 @@ export default function Claims() {
       status: claim.status || '대기 중', carrier: claim.carrier || 'CJ대한통운',
       tracking_no: claim.tracking_no || '', notes: claim.notes || '',
       purchase_date: claim.purchase_date || '', mfg_date: claim.mfg_date || '',
+      prescription_image: claim.prescription_image || '',
+      inspection_image: claim.inspection_image || '',
+      purchase_proof_image: claim.purchase_proof_image || '',
+      id_card_image: claim.id_card_image || '',
       item_type: claim.item_type || 'general',
       hearing_aid_details: parsedHearing || { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
     });
@@ -494,36 +542,63 @@ export default function Claims() {
     } catch (err) { alert('사진을 처리하는 중 오류가 발생했습니다.'); }
   };
 
-  const handleEditSubmit = async () => {
-    let newStatus = editData.status;
-    if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) newStatus = '교부 완료';
-    else if (editData.tracking_no && newStatus === '대기 중') newStatus = '배송 중';
-    
-    const payload = {
-      claim_date: editData.claim_date, total_amount: parseInt(editData.total_amount) || 0,
-      status: newStatus, carrier: editData.carrier, tracking_no: editData.tracking_no,
-      receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
-      notes: editData.notes || '', purchase_date: editData.purchase_date || null,
-      mfg_date: editData.mfg_date || null,
-      item_type: editData.item_type,
-      hearing_aid_details: editData.item_type === 'hearing_aid' ? editData.hearing_aid_details : null
+  const handleSingleDocUpload = (e, field) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image(); img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; let scaleSize = 1;
+        if (img.width > MAX_WIDTH) { scaleSize = MAX_WIDTH / img.width; }
+        canvas.width = img.width * scaleSize; canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setEditData(prev => ({ ...prev, [field]: canvas.toDataURL('image/jpeg', 0.6) }));
+      };
     };
+  };
 
-    if (editData.item_type === 'hearing_aid') {
-      const hData = editData.hearing_aid_details;
-      if (hData.right?.enabled && hData.right?.product_id) payload.product_id = hData.right.product_id;
-      else if (hData.left?.enabled && hData.left?.product_id) payload.product_id = hData.left.product_id;
-    }
-
+  const handleEditSubmit = async () => {
+    setIsSavingEdit(true);
     try {
+      let newStatus = editData.status;
+      if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) newStatus = '교부 완료';
+      else if (editData.tracking_no && newStatus === '대기 중') newStatus = '배송 중';
+      
+      const payload = {
+        claim_date: editData.claim_date, total_amount: Number(editData.total_amount) || 0,
+        status: newStatus, carrier: editData.carrier, tracking_no: editData.tracking_no,
+        receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
+        notes: editData.notes || '', purchase_date: editData.purchase_date || null,
+        mfg_date: editData.mfg_date || null,
+        prescription_image: editData.prescription_image || null,
+        inspection_image: editData.inspection_image || null,
+        purchase_proof_image: editData.purchase_proof_image || null,
+        id_card_image: editData.id_card_image || null,
+        item_type: editData.item_type,
+        hearing_aid_details: editData.item_type === 'hearing_aid' ? editData.hearing_aid_details : null
+      };
+
+      if (editData.item_type === 'hearing_aid') {
+        const hData = editData.hearing_aid_details;
+        if (hData.right?.enabled && hData.right?.product_id) payload.product_id = hData.right.product_id;
+        else if (hData.left?.enabled && hData.left?.product_id) payload.product_id = hData.left.product_id;
+      }
+
       const { error } = await supabase.from('claims').update(payload).eq('id', selectedClaim.id);
       if (error) throw error;
+      
       alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) fetchData(user.id); 
+      
     } catch (error) {
       alert(`저장 중 오류가 발생했습니다.\n상세 사유: ${error.message || JSON.stringify(error)}`);
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -553,26 +628,10 @@ export default function Claims() {
     const initialFiles = {};
     const docsList = getDocsListForClaim(claim, subject);
     
-    const qual = claim?.customers?.qualification;
-    if (qual === '건강보험' || qual === '경감(건강보험)') {
-      docsList.forEach(doc => initialFiles[doc] = true);
-      return initialFiles;
-    }
-
-    const gov = claim?.customers?.local_governments;
-    const legacyMap = { 'cost_claim': '교부비용청구서', 'delivery_confirm': '교부확인서', 'biz_reg': '사업자등록증', 'bankbook': '계좌사본', 'receipt': '물품인수증', 'estimate': '견적서', 'invoice': '거래명세서', 'customer_id_card': '기타 첨부(교부사진, 배송추적 캡쳐본 등)' };
-    let reqDocs = [];
-    if (gov?.required_documents) {
-      if (typeof gov.required_documents === 'string') {
-        try { reqDocs = JSON.parse(gov.required_documents); } catch(e) { reqDocs = gov.required_documents.split(',').map(s => s.trim()); }
-      } else if (Array.isArray(gov.required_documents)) { reqDocs = gov.required_documents; }
-    }
-    const normalizedReqDocs = reqDocs.map(doc => legacyMap[doc] || doc);
-
     docsList.forEach(docName => {
-      if (normalizedReqDocs && normalizedReqDocs.length > 0) initialFiles[docName] = normalizedReqDocs.includes(docName);
-      else initialFiles[docName] = true;
+      initialFiles[docName] = true;
     });
+
     return initialFiles;
   };
 
@@ -636,8 +695,8 @@ export default function Claims() {
           const docElements = pdfContainerRef.current.children;
           for (let i = 0; i < docElements.length; i++) {
             const element = docElements[i];
-            const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, logging: false, allowTaint: true });
-            const imgData = canvas.toDataURL('image/jpeg', 0.8);
+            const canvas = await html2canvas(element, { scale: 1.2, useCORS: true, logging: false, allowTaint: true });
+            const imgData = canvas.toDataURL('image/jpeg', 0.6);
             const pdf = new jsPDF('p', 'mm', 'a4');
             pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             const pdfDataUri = pdf.output('datauristring');
@@ -705,20 +764,107 @@ export default function Claims() {
         </tbody>
       </table>
       <div className="flex-1 flex flex-col justify-center px-6 leading-10 text-[15px] font-bold text-gray-800 tracking-tight"><p className="text-justify indent-4">위 위임자는 「국민건강보험법」 제51조, 같은 법 시행규칙 제26조 및 「장애인보조기기 보험급여 기준 등에 관한 규칙」에 따라 보조기기 급여비용의 지급 청구 및 수령에 관한 일체의 권한을 위 수임자(대리인)에게 위임합니다.</p></div>
-      <div className="text-center font-black text-lg mt-10 mb-16 tracking-widest">{claimData.issue_date?.split('-')[0]}년 &nbsp;&nbsp; {claimData.issue_date?.split('-')[1]}월 &nbsp;&nbsp; {claimData.issue_date?.split('-')[2]}일</div>
+      {/* 💡 2. 위임장 작성일을 청구일(claim_date)로 표시 */}
+      <div className="text-center font-black text-lg mt-10 mb-16 tracking-widest">{claimData.claim_date?.split('-')[0]}년 &nbsp;&nbsp; {claimData.claim_date?.split('-')[1]}월 &nbsp;&nbsp; {claimData.claim_date?.split('-')[2]}일</div>
       <div className="flex justify-end items-center text-[15px] font-bold pr-12 mb-20 relative"><span className="mr-4 text-gray-600">위임자(수급자) :</span><span className="mr-12 font-black text-lg">{claimData.customers?.name}</span><span className="text-gray-400 text-sm">(서명 또는 인)</span>{claimData.customers?.signature && (<img src={claimData.customers.signature} alt="서명" className="absolute right-6 top-1/2 -translate-y-1/2 w-[25mm] h-[15mm] object-contain mix-blend-multiply" />)}</div>
+    </div>
+  );
+
+  const renderDocUploadBox = (title, field) => (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-bold text-gray-600">{title}</span>
+      {editData[field] ? (
+        <div className="relative group w-full h-24 shrink-0">
+          <img src={editData[field]} className="w-full h-full object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={title} />
+          <button onClick={() => setEditData({...editData, [field]: null})} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
+        </div>
+      ) : (
+        <div className="relative border-2 border-dashed border-emerald-300 rounded-xl w-full h-24 flex flex-col items-center justify-center bg-emerald-50/50 hover:bg-emerald-100 cursor-pointer group shadow-sm shrink-0">
+          <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={(e) => handleSingleDocUpload(e, field)} />
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-1 group-hover:bg-emerald-600 group-hover:text-white"><ImagePlus size={16} strokeWidth={2.5} /></div>
+          <span className="text-[10px] font-black text-emerald-600 group-hover:text-emerald-800">업로드</span>
+        </div>
+      )}
     </div>
   );
 
   const renderDocument = (fileName, claimData) => {
     const TargetDoc = documentComponents[fileName];
     
-    // 💡 계약서 호환성을 위해 product 안에 hearing_aid를 병합하여 넘겨줌
+    let adjustedStandardPrice = claimData.products?.standard_price || 0;
+    let adjustedNoticePrice = claimData.products?.price || 0;
+    let adjustedActualPrice = claimData.total_amount || 0;
+
+    const qual = claimData.customers?.qualification || '';
+    let copayRate = 0.1;
+    if (qual.includes('기초') || qual.includes('의료급여')) copayRate = 0;
+    else if (qual.includes('경감')) copayRate = 0.05;
+
+    // 💡 보청기 2행 처리 및 가격 보정
+    let claimItems = [];
+    if (claimData.item_type === 'hearing_aid') {
+      adjustedStandardPrice = 1310000;
+      const rPrice = claimData.hearing_aid_details?.right?.enabled ? Number(claimData.hearing_aid_details.right.price || 0) : 0;
+      const lPrice = claimData.hearing_aid_details?.left?.enabled ? Number(claimData.hearing_aid_details.left.price || 0) : 0;
+      adjustedNoticePrice = rPrice + lPrice;
+      adjustedActualPrice = Number(claimData.total_amount) || 0;
+
+      // 보청기가 선택되었을 경우 2개의 행(배열)으로 쪼개서 items를 생성
+      if (claimData.hearing_aid_details?.right?.enabled) {
+        const rightDev = allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.right.product_id));
+        claimItems.push({
+          name: `보청기 (우측)`,
+          model: rightDev?.name || '모델미정',
+          price: rPrice,
+          quantity: 1,
+          total: rPrice
+        });
+      }
+      if (claimData.hearing_aid_details?.left?.enabled) {
+        const leftDev = allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.left.product_id));
+        claimItems.push({
+          name: `보청기 (좌측)`,
+          model: leftDev?.name || '모델미정',
+          price: lPrice,
+          quantity: 1,
+          total: lPrice
+        });
+      }
+    } else {
+      // 일반 상품일 경우 1줄짜리 배열
+      claimItems.push({
+        name: claimData.products?.category ? `[${claimData.products?.category}] ${claimData.products?.name}` : (claimData.products?.name || '품목 미정'),
+        model: claimData.products?.model || '',
+        price: adjustedActualPrice,
+        quantity: 1,
+        total: adjustedActualPrice
+      });
+    }
+
+    const baseCalcPrice = Math.min(adjustedStandardPrice, adjustedNoticePrice, adjustedActualPrice);
+    const calculatedCopay = Math.floor(baseCalcPrice * copayRate);
+    const calculatedClaimAmount = baseCalcPrice - calculatedCopay;
+
+    // 💡 거래명세서 수신자 (공급받는자) 분기 로직
+    const isLocalGov = !isNHISClaim(claimData);
+    const transactionRecipientName = isLocalGov ? (claimData.customers?.local_governments?.name || claimData.customers?.name) : claimData.customers?.name;
+
     const adjustedClaimData = {
       ...claimData,
-      customer: claimData.customers || {}, 
+      total_amount: adjustedActualPrice,
+      calculated_copay: calculatedCopay,          
+      calculated_claim_amount: calculatedClaimAmount, 
+      base_calc_price: baseCalcPrice,              
+      customer: {
+        ...claimData.customers,
+        // 거래명세서일 경우에만 대상자 이름 또는 지자체 이름으로 덮어씀
+        name: fileName === '거래명세서' ? transactionRecipientName : claimData.customers?.name
+      }, 
+      items: claimItems, // 💡 TransactionDoc 렌더링용 배열 추가
       product: {
         ...claimData.products,
+        standard_price: adjustedStandardPrice,
+        price: adjustedNoticePrice,
         hearing_aid: claimData.item_type === 'hearing_aid' && claimData.hearing_aid_details ? {
           right: claimData.hearing_aid_details.right?.enabled ? { ...(allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.right.product_id)) || {}), price: claimData.hearing_aid_details.right.price } : null,
           left: claimData.hearing_aid_details.left?.enabled ? { ...(allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.left.product_id)) || {}), price: claimData.hearing_aid_details.left.price } : null
@@ -728,33 +874,39 @@ export default function Claims() {
       claimant: { name: docInputs.claimant_name || claimData.claimant?.name || '', relation: docInputs.claimant_relation || claimData.claimant?.relation || '', resident_number: docInputs.claimant_rrn || claimData.claimant?.resident_number || '', phone: docInputs.claimant_phone || claimData.claimant?.phone || '', mobile: docInputs.claimant_phone || claimData.claimant?.mobile || '' },
       company: companyInfo || {},
       signatures: { claimant_sign: docInputs.claimant_sign || claimData.claimant?.signature || claimData.customers?.signature, customer_sign: claimData.customers?.signature, company_seal: companyInfo?.seal_image },
-      claimSubject: claimSubject, issueDate: issueDate
+      claimSubject: claimSubject, issueDate: issueDate,
+      prescription_image: claimData.prescription_image || null,
+      inspection_image: claimData.inspection_image || null,
+      purchase_proof_image: claimData.purchase_proof_image || null,
+      id_card_image: claimData.id_card_image || null
     };
 
-    if (fileName === '교부비용청구서' || fileName === '거래명세서' || fileName === '보조기기 급여 지급청구서') adjustedClaimData.claim_date = issueDate;
+    if (fileName === '교부비용청구서' || fileName === '거래명세서' || fileName === '보조기기 급여 지급청구서' || fileName === '위임장') adjustedClaimData.claim_date = issueDate;
     else adjustedClaimData.claim_date = claimData.claim_date || issueDate;
 
     if (TargetDoc) {
-      try { return <TargetDoc data={adjustedClaimData} company={companyInfo} />; } 
+      try { 
+        // 💡 1. 거래명세서가 A4 밖으로 넘어가지 않도록 transform scale 을 적용
+        const isTransaction = fileName === '거래명세서';
+        return (
+          <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
+            <div style={isTransaction ? { transform: 'scale(0.93)', transformOrigin: 'top center', width: '100%' } : { width: '100%', height: '100%' }}>
+              <TargetDoc data={adjustedClaimData} company={companyInfo} />
+            </div>
+          </div>
+        ); 
+      } 
       catch (error) { return <div className="h-[297mm] flex flex-col items-center justify-center text-red-500 font-bold bg-red-50 p-10 text-center">서류 렌더링 중 오류가 발생했습니다.<br/>{error.message}</div>; }
     } 
     
-    if (fileName === '사업자등록증') return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
-    else if (fileName === '계좌사본') return <ImageOnlyDoc title="통장 사본 (계좌 사본)" src={companyInfo.bankbook_image} />;
-    else if (fileName === '위임장') return renderDelegationDoc(adjustedClaimData, companyInfo);
-    else if (fileName === '교부(판매)업체 자격사항 서류') {
-      return (
-        <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
-          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">업체 자격 서류</h2>
-          <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
-            {companyInfo.qualifying_docs && companyInfo.qualifying_docs.length > 0 ? (
-              companyInfo.qualifying_docs.map((doc, i) => (<div key={i} className="flex flex-col items-center"><span className="text-sm font-bold text-gray-500 mb-2">{doc.type}</span>{doc.image && <img src={doc.image} className="max-w-full max-h-[100mm] object-contain border p-2 shadow-sm" alt={doc.type}/>}</div>))
-            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 업체 자격 서류가 없습니다.</div>)}
-          </div>
-        </div>
-      );
-    } else if (fileName === '신분증 및 복지카드 사본' || fileName === '신분증 또는 복지카드 사본') {
-      return <ImageOnlyDoc title="신분증 및 복지카드 사본" notice="* 개인정보보호법에 따라 주민등록번호 뒷자리는 반드시 마스킹 처리되어야 합니다." emptyMessage="대상자 관리에서 스캔/등록된 이미지가 적용될 예정입니다." />;
+    if (fileName === '사업자등록증') {
+      return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
+    } else if (fileName === '계좌사본') {
+      return <ImageOnlyDoc title="통장 사본 (계좌 사본)" src={companyInfo.bankbook_image} />;
+    } else if (fileName === '위임장') {
+      return renderDelegationDoc(adjustedClaimData, companyInfo);
+    } else if (fileName === '처방전') {
+      return <ImageOnlyDoc title="보장구 처방전 사본" src={adjustedClaimData.prescription_image} notice="* 원본 대조필 또는 병원 발행 원본 이미지가 필요합니다." emptyMessage="청구 내역 수정(편집) 화면에서 처방전 이미지를 등록해 주세요." />;
     } else if (fileName === '검수확인서') {
       if (isInspectionExempt(claimData.products)) {
         return (
@@ -765,7 +917,28 @@ export default function Claims() {
           </div>
         );
       }
-      return <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative"><h2 className="text-2xl font-black mb-10 text-center tracking-widest">검수확인서</h2><div className="flex-1 border-2 border-dashed border-gray-300 w-full flex items-center justify-center bg-gray-50 rounded-2xl text-gray-400 font-bold text-center p-10 leading-loose">공단 제출용 검수확인서 첨부 영역입니다.</div></div>;
+      return <ImageOnlyDoc title="검수확인서" src={adjustedClaimData.inspection_image} notice="* 병원 또는 공단에서 발행한 원본 이미지가 필요합니다." emptyMessage="청구 내역 수정(편집) 화면에서 검수확인서 이미지를 등록해 주세요." />;
+    } else if (fileName === '구매 증빙서류 (세금계산서 등)') {
+      return <ImageOnlyDoc title="구매 증빙서류 (세금계산서 등)" src={adjustedClaimData.purchase_proof_image} notice="* 세금계산서, 신용카드 전표 등" emptyMessage="청구 내역 수정(편집) 화면에서 세금계산서 또는 영수증을 등록해 주세요." />;
+    } else if (fileName === '신분증 및 복지카드 사본' || fileName === '신분증 또는 복지카드 사본') {
+      return <ImageOnlyDoc title="신분증 및 복지카드 사본" src={adjustedClaimData.id_card_image} notice="* 개인정보보호법에 따라 주민등록번호 뒷자리는 반드시 마스킹 처리되어야 합니다." emptyMessage="청구 내역 수정(편집) 화면에서 신분증/복지카드 사본을 등록해 주세요." />;
+    } else if (fileName === '교부(판매)업체 자격사항 서류') {
+      // 💡 3. 업체 자격 서류 이미지가 꽉 차고 크게 보이도록 스타일 전면 수정
+      return (
+        <div className="bg-white w-[210mm] h-[297mm] p-[15mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
+          <h2 className="text-2xl font-black mb-6 text-center tracking-widest">업체 자격 서류</h2>
+          <div className="flex flex-col gap-6 items-center justify-start flex-1 overflow-hidden w-full">
+            {companyInfo.qualifying_docs && companyInfo.qualifying_docs.length > 0 ? (
+              companyInfo.qualifying_docs.map((doc, i) => (
+                <div key={i} className="flex flex-col items-center justify-center w-full h-full flex-1 min-h-0">
+                  <span className="text-sm font-bold text-gray-500 mb-2">{doc.type}</span>
+                  {doc.image && <img src={doc.image} className="w-full h-full object-contain border p-2 shadow-sm rounded" alt={doc.type}/>}
+                </div>
+              ))
+            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 업체 자격 서류가 없습니다.</div>)}
+          </div>
+        </div>
+      );
     } else if (fileName.includes('기타 첨부') || fileName.includes('교부 사진')) {
       return (
         <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
@@ -820,7 +993,6 @@ export default function Claims() {
   };
 
   const renderActions = (claim, isProductMissing, s) => {
-    // 💡 계약서 관리 버튼 보이기 조건
     const isHearingAid = claim.item_type === 'hearing_aid' || claim?.products?.category?.includes('보청기') || claim?.products?.name?.includes('보청기');
 
     return (
@@ -858,19 +1030,85 @@ export default function Claims() {
     <>
       <style type="text/css">
         {`
-          .print-page-area { display: none; }
+          /* 브라우저 화면(모달 등)에서는 실제 인쇄 DOM을 보이지 않게 처리 */
+          @media screen {
+            .print-only-container { 
+              position: fixed !important; 
+              top: -9999px !important; 
+              left: -9999px !important; 
+              width: 1px !important; 
+              height: 1px !important; 
+              overflow: hidden !important; 
+              opacity: 0 !important; 
+              pointer-events: none !important; 
+              z-index: -9999 !important; 
+            }
+          }
+
+          /* 실제 인쇄 다중 페이지 처리 설정 */
           @media print {
-            html, body { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .print-hide-ui { display: none !important; }
-            .print-page-area { display: block !important; position: absolute !important; left: 0 !important; top: 0 !important; width: 210mm !important; margin: 0 auto !important; background: white !important; z-index: 99999 !important; }
-            .print-page-break { page-break-after: always !important; page-break-inside: avoid !important; width: 210mm !important; height: 296mm !important; margin: 0 auto !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; overflow: hidden !important; box-sizing: border-box !important; }
-            .print-page-break > div { width: 100% !important; height: 100% !important; max-width: none !important; min-height: auto !important; margin: 0 !important; }
-            .print-page-break:last-child { page-break-after: auto !important; }
-            @page { size: A4 portrait; margin: 0 !important; }
+            /* 브라우저 기본 여백 없애기 */
+            @page {
+              size: A4 portrait;
+              margin: 0 !important;
+            }
+
+            /* 전체 레이아웃 초기화 */
+            html, body { 
+              width: 100% !important;
+              height: auto !important;
+              min-height: auto !important;
+              margin: 0 !important; 
+              padding: 0 !important; 
+              background: white !important; 
+            }
+            
+            /* 💡 핵심: 앱의 모든 UI 요소(root 및 기타)를 감춥니다. 
+               이 때, display:none 대신 visibility: hidden을 사용하여 
+               브라우저의 렌더링 최적화 버그(하얗게 나오는 현상)를 방지합니다. */
+            body * { 
+              visibility: hidden; 
+            }
+            
+            /* 💡 포탈로 body에 붙은 실제 인쇄용 DOM과 그 자식들만 다시 보이게 덮어씁니다. */
+            .print-only-container, .print-only-container * {
+              visibility: visible;
+            }
+
+            .print-only-container {
+              position: absolute !important; 
+              top: 0 !important;
+              left: 0 !important;
+              width: 210mm !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+            }
+
+            /* 각 페이지가 A4 영역을 완전히 차지하게 강제 */
+            .print-page-break { 
+              page-break-after: always !important; 
+              break-after: page !important;
+              page-break-inside: avoid !important; 
+              break-inside: avoid !important;
+              width: 210mm !important; 
+              height: 297mm !important; 
+              max-height: 297mm !important;
+              margin: 0 auto !important; 
+              padding: 0 !important; 
+              box-sizing: border-box !important; 
+              overflow: hidden !important; 
+              background: white !important; 
+            }
+            
+            .print-page-break:last-child { 
+              page-break-after: auto !important; 
+              break-after: auto !important; 
+            }
           }
         `}
       </style>
 
+      {/* 기본 화면 UI (인쇄 시 숨겨짐) */}
       <div className="print-hide-ui space-y-6 animate-in fade-in duration-700 font-sans pb-24">
         
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -896,7 +1134,11 @@ export default function Claims() {
             const s = claim.status;
             const isProductMissing = (!claim.product_id && claim.item_type === 'general') || claim.products?.name === '품목 미지정';
             const qual = claim.customers?.qualification;
-            const branchName = (qual === '건강보험' || qual === '경감(건강보험)') ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
+            const isNHIS = qual === '건강보험' || qual === '경감(건강보험)';
+            const branchName = isNHIS ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
+            
+            const reqPrescription = isPrescriptionRequired(claim.products, claim.item_type, isNHIS);
+            const reqInspection = isNHIS && !isProductMissing && !isInspectionExempt(claim.products);
 
             return (
               <div key={claim.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative group">
@@ -906,7 +1148,18 @@ export default function Claims() {
                 </div>
                 {claim.notes && (<div title={claim.notes} className="mb-3 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-2 py-1 rounded"><FileText size={10} /> 특이사항 있음 (수정 화면 확인)</div>)}
                 <div className="bg-gray-50 rounded-xl p-3 mb-4 flex flex-col gap-3">
-                  <div className="font-black text-sm text-indigo-900 leading-snug break-keep flex items-center gap-1"><Package size={14} className="text-indigo-400" />{isProductMissing ? <span className="text-rose-500">상품 미할당</span> : claim.products?.name}</div>
+                  <div className="font-black text-sm text-indigo-900 leading-snug break-keep flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1">
+                      <Package size={14} className="text-indigo-400" />
+                      {isProductMissing ? <span className="text-rose-500">상품 미할당</span> : claim.products?.name}
+                    </div>
+                    {!isProductMissing && (reqPrescription || reqInspection) && (
+                      <div className="flex gap-1 ml-4">
+                        {reqPrescription && <span className="px-1.5 py-[2px] bg-rose-50 text-rose-500 border border-rose-100 rounded text-[9px] font-black shadow-sm">처방전</span>}
+                        {reqInspection && <span className="px-1.5 py-[2px] bg-blue-50 text-blue-500 border border-blue-100 rounded text-[9px] font-black shadow-sm">검수확인서</span>}
+                      </div>
+                    )}
+                  </div>
                   {isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (<div className="overflow-x-auto custom-scrollbar pb-1">{renderStatusPipeline(claim)}</div>)}
                 </div>
                 {renderActions(claim, isProductMissing, s)}
@@ -928,6 +1181,9 @@ export default function Claims() {
                 const isNHIS = (claim.customers?.qualification === '건강보험' || claim.customers?.qualification === '경감(건강보험)');
                 const branchName = isNHIS ? (claim.customers?.nhis_branches?.name || '공단지사 미정') : (claim.customers?.local_governments?.name || '지자체 미정');
                 
+                const reqPrescription = isPrescriptionRequired(claim.products, claim.item_type, isNHIS);
+                const reqInspection = isNHIS && !isProductMissing && !isInspectionExempt(claim.products);
+
                 return (
                   <tr key={claim.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="py-3 px-4 text-center align-middle font-mono text-xs font-black text-gray-400">{serialNumber}</td>
@@ -938,7 +1194,19 @@ export default function Claims() {
                       {claim.notes && (<div title={claim.notes} className="mt-1.5 text-[10px] text-rose-600 font-bold flex items-center gap-1 bg-rose-50 border border-rose-100 w-fit px-1.5 py-0.5 rounded cursor-help"><FileText size={10} /> 특이사항 있음</div>)}
                     </td>
                     <td className="py-3 px-5 text-indigo-900 font-black text-xs leading-snug break-keep align-middle">
-                      {isProductMissing ? (<span className="text-rose-500 font-bold bg-rose-50 px-2 py-1 rounded-md text-[11px] inline-flex items-center gap-1"><AlertTriangle size={12}/> 상품 미할당</span>) : (claim.products?.name)}
+                      {isProductMissing ? (
+                        <span className="text-rose-500 font-bold bg-rose-50 px-2 py-1 rounded-md text-[11px] inline-flex items-center gap-1"><AlertTriangle size={12}/> 상품 미할당</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <span>{claim.products?.name}</span>
+                          {(reqPrescription || reqInspection) && (
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              {reqPrescription && <span className="px-1.5 py-[2px] bg-rose-50 text-rose-500 border border-rose-100 rounded text-[9px] font-black shadow-sm">처방전</span>}
+                              {reqInspection && <span className="px-1.5 py-[2px] bg-blue-50 text-blue-500 border border-blue-100 rounded text-[9px] font-black shadow-sm">검수</span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-xs">{claim.total_amount?.toLocaleString()}</td>
                     <td className="py-3 px-4 font-mono text-xs">{claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</td>
@@ -963,7 +1231,7 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 💡 계약서 단독 팝업 */}
+        {/* 계약서 모달 */}
         {activeModal === 'contract' && selectedClaim && (
           <div className="fixed inset-0 z-[250] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
              <div className="bg-gray-200 w-full max-w-4xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[95vh] flex flex-col flex-1">
@@ -1024,7 +1292,6 @@ export default function Claims() {
                   </select>
                 </div>
                 
-                {/* 💡 일반/보청기 토글 영역 */}
                 <div>
                   <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">상품 유형 선택</label>
                   <div className="flex gap-2 bg-gray-100 p-1.5 rounded-xl">
@@ -1054,7 +1321,7 @@ export default function Claims() {
                     </div>
                     <div className={`p-3 border rounded-xl transition-all ${newData.hearing_aid_details.left.enabled ? 'bg-white border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
                       <div className="flex items-center gap-2 mb-2"><input type="checkbox" className="w-4 h-4 cursor-pointer" checked={newData.hearing_aid_details.left.enabled} onChange={e => handleHearingAidChange('newData', 'left', 'enabled', e.target.checked)} /><span className="text-xs font-black">좌측 (Left)</span></div>
-                      <select disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-[11px] p-2 bg-gray-50 border border-gray-200 rounded-lg mb-2" value={newData.hearing_aid_details.left.product_id} onChange={e => handleHearingAidChange('newData', 'left', 'product_id', e.target.value)}>
+                      <select disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-[11px] p-2 bg-white border border-gray-200 rounded-lg mb-2" value={newData.hearing_aid_details.left.product_id} onChange={e => handleHearingAidChange('newData', 'left', 'product_id', e.target.value)}>
                         <option value="">보청기 모델 선택...</option>
                         {allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                       </select>
@@ -1080,7 +1347,7 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 💡 편집 모달 내 좌/우 편집기 포함 */}
+        {/* 편집 모달 */}
         {activeModal === 'edit' && selectedClaim && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-2xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
@@ -1147,20 +1414,33 @@ export default function Claims() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="col-span-1 md:col-span-2 mt-2 bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100">
+                    <div className="text-xs text-emerald-600 font-black border-b border-emerald-200 pb-2 mb-3 flex items-center gap-1.5">
+                      <ImagePlus size={14}/> 청구 증빙 서류 업로드 (이미지)
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {isPrescriptionRequired(selectedClaim?.products, editData.item_type, isNHISClaim(selectedClaim)) && renderDocUploadBox('처방전 (해당 품목 필수)', 'prescription_image')}
+                      {isNHISClaim(selectedClaim) && !isInspectionExempt(selectedClaim?.products) && renderDocUploadBox('검수확인서', 'inspection_image')}
+                      {renderDocUploadBox('세금계산서 (구매증빙)', 'purchase_proof_image')}
+                      {isNHISClaim(selectedClaim) && renderDocUploadBox('신분증/복지카드', 'id_card_image')}
+                    </div>
+                    <p className="text-[10px] text-gray-500 font-bold mt-3">* 업로드된 이미지는 인쇄 및 메일 발송 시 PDF에 통합되어 자동 출력됩니다.</p>
+                  </div>
+
+                  <div className="col-span-1 md:col-span-2">
                     <div className="text-xs text-blue-600 font-black border-b pb-2 mb-3 flex justify-between"><span>수취 증빙 사진 (교부확인서 삽입)</span><span className="text-gray-400 tracking-wider">{photoFiles.length}/3 장</span></div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       {photoFiles.map((src, idx) => (
-                        <div key={idx} className="relative group">
-                          <img src={src} className="w-full h-28 object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
+                        <div key={idx} className="relative group w-full h-24 shrink-0">
+                          <img src={src} className="w-full h-full object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
                           <button onClick={() => setPhotoFiles(photoFiles.filter((_, i) => i !== idx))} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
                         </div>
                       ))}
                       {photoFiles.length < 3 && (
-                        <div className="relative border-2 border-dashed border-blue-300 rounded-xl h-28 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 cursor-pointer group shadow-sm">
+                        <div className="relative border-2 border-dashed border-blue-300 rounded-xl w-full h-24 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 cursor-pointer group shadow-sm shrink-0">
                           <input type="file" accept="image/*" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={handlePhotoFilesChange} />
-                          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white"><ImagePlus size={18} strokeWidth={2.5} /></div>
-                          <span className="text-[12px] font-black text-blue-600 group-hover:text-blue-800">+ 추가</span>
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white"><ImagePlus size={18} strokeWidth={2.5} /></div>
+                          <span className="text-[10px] font-black text-blue-600 group-hover:text-blue-800">+ 추가</span>
                         </div>
                       )}
                     </div>
@@ -1172,14 +1452,16 @@ export default function Claims() {
                 <button onClick={() => handleDelete(selectedClaim.id)} className="w-full md:w-auto px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm order-last md:order-first"><Trash2 size={16}/> 삭제하기</button>
                 <div className="flex gap-2 w-full md:w-auto">
                   <button onClick={() => setActiveModal(null)} className="flex-1 md:flex-none px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 text-sm shadow-sm">취소</button>
-                  <button onClick={handleEditSubmit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 text-sm">첨부하기 (저장)</button>
+                  <button onClick={handleEditSubmit} disabled={isSavingEdit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 text-sm flex items-center justify-center gap-2 disabled:bg-indigo-400">
+                    {isSavingEdit ? <Loader2 size={16} className="animate-spin" /> : '첨부하기 (저장)'}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 메일 및 인쇄 모달 등 나머지 생략 없이 하단에 유지됨 */}
+        {/* 메일 모달 */}
         {activeModal === 'email' && selectedClaim && (
           <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
             <div className="bg-white w-full max-w-5xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1246,47 +1528,52 @@ export default function Claims() {
                 {!isDocPreview ? (
                   <><button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl">닫기</button><button onClick={() => setIsDocPreview(true)} className="flex-[1.5] py-3 bg-indigo-600 text-white rounded-xl font-black flex justify-center items-center gap-2"><Eye size={16}/> 서류 미리보기</button></>
                 ) : (
-                  <><button onClick={() => setIsDocPreview(false)} className="flex-1 py-3 bg-white border border-gray-200 rounded-xl font-black flex justify-center items-center gap-2"><ArrowLeft size={16}/> 수정</button><button onClick={handleSendRealEmail} disabled={isSendingEmail} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-black flex justify-center items-center gap-2 disabled:bg-blue-300">{isSendingEmail ? '발송 중...' : <><Send size={16}/> PDF 이메일 발송</>}</button></>
+                  <><button onClick={() => setIsDocPreview(false)} className="flex-1 py-3 bg-white border border-gray-200 rounded-xl font-black flex justify-center items-center gap-2"><ArrowLeft size={16}/> 수정</button><button onClick={handleSendRealEmail} disabled={isSendingEmail} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-black flex justify-center items-center gap-2 disabled:bg-blue-300">{isSendingEmail ? <Loader2 size={16} className="animate-spin" /> : <><Send size={16}/> PDF 이메일 발송</>}</button></>
                 )}
               </div>
             </div>
           </div>
         )}
 
+        {/* 인쇄 모달 (설정 및 화면 미리보기) */}
         {activeModal === 'print' && selectedClaim && (
-          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
-             <div className="bg-white w-full max-w-6xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
+          <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black print-hide-ui">
+            <div className="bg-white w-full max-w-6xl rounded-3xl md:rounded-[3rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col flex-1">
               <div className="p-5 md:p-6 bg-gray-800 text-white flex justify-between items-center shrink-0">
-                <h4 className="text-lg">{isPrintDocPreview ? '선택한 서류 인쇄 미리보기' : '서류 인쇄 선택'}</h4><button onClick={() => setActiveModal(null)}><X size={20}/></button>
+                <h4 className="text-lg">{isPrintDocPreview ? '선택한 서류 인쇄 미리보기' : '서류 인쇄 선택'}</h4>
+                <button onClick={() => setActiveModal(null)} className="hover:text-gray-300 transition-colors"><X size={20}/></button>
               </div>
+              
               <div className="flex-1 overflow-hidden flex flex-col">
                 {!isPrintDocPreview ? (
                   <div className="p-5 md:p-8 overflow-y-auto bg-gray-50 flex-1 custom-scrollbar">
                     <div className="w-full max-w-2xl mx-auto space-y-4">
-                       {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
-                         <>
-                           <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
-                             <label className="text-[11px] text-gray-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
-                             <div className="flex gap-2 mt-2">
-                               <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (본인 계좌)</button>
-                               <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (가족 계좌)</button>
-                               <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>기업 (업체 위탁)</button>
-                             </div>
-                           </div>
-                           {renderDocInputs()}
-                         </>
-                       )}
-                       <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
-                         <label className="text-[11px] text-gray-700 uppercase font-black block">서류 발행일 선택</label>
-                         <p className="text-[10px] text-gray-400 font-bold leading-none mb-2">* 작성일자에 일괄 반영됩니다.</p>
-                         <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
-                       </div>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-                         {getDocsListForClaim(selectedClaim, claimSubject).map((docName) => {
-                           const isChecked = printFiles[docName];
-                           return (<button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}><span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}</button>);
-                         })}
-                       </div>
+                      {(selectedClaim.customers?.qualification === '건강보험' || selectedClaim.customers?.qualification === '경감(건강보험)') && (
+                        <>
+                          <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
+                            <label className="text-[11px] text-gray-700 uppercase font-black block">청구 주체 선택 (공단용)</label>
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => handleSubjectChange('개인 (본인 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (본인 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (본인 계좌)</button>
+                              <button onClick={() => handleSubjectChange('개인 (가족 계좌 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '개인 (가족 계좌 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>개인 (가족 계좌)</button>
+                              <button onClick={() => handleSubjectChange('기업 (업체 위탁 청구)', 'print')} className={`flex-1 py-3 rounded-lg font-bold text-sm border shadow-sm transition-all ${claimSubject === '기업 (업체 위탁 청구)' ? 'bg-gray-800 text-white border-gray-800' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>기업 (업체 위탁)</button>
+                            </div>
+                          </div>
+                          {renderDocInputs()}
+                        </>
+                      )}
+                      
+                      <div className="bg-white p-4 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm space-y-1">
+                        <label className="text-[11px] text-gray-700 uppercase font-black block">서류 발행일 선택</label>
+                        <p className="text-[10px] text-gray-400 font-bold leading-none mb-2">* 작성일자에 일괄 반영됩니다.</p>
+                        <input type="date" className="w-full bg-gray-50 p-2.5 rounded-xl border border-gray-200" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
+                        {getDocsListForClaim(selectedClaim, claimSubject).map((docName) => {
+                          const isChecked = printFiles[docName];
+                          return (<button key={docName} onClick={() => setPrintFiles({...printFiles, [docName]: !isChecked})} className={`w-full p-4 rounded-xl border-2 flex justify-between items-center text-sm transition-all ${isChecked ? 'border-gray-800 bg-white text-gray-900 shadow-sm' : 'border-gray-200 text-gray-400 bg-transparent'}`}><span className="font-bold text-left">{docName}</span>{isChecked ? <CheckSquare size={16} className="shrink-0"/> : <Square size={16} className="shrink-0"/>}</button>);
+                        })}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1299,11 +1586,18 @@ export default function Claims() {
                   </div>
                 )}
               </div>
+              
               <div className="p-4 md:p-5 border-t bg-white flex gap-2 md:gap-3 shrink-0">
                 {!isPrintDocPreview ? (
-                  <><button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 rounded-xl">닫기</button><button onClick={() => setIsPrintDocPreview(true)} className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-black flex justify-center items-center gap-2"><Eye size={16}/> 미리보기</button></>
+                  <>
+                    <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors">닫기</button>
+                    <button onClick={() => setIsPrintDocPreview(true)} className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-black flex justify-center items-center gap-2 hover:bg-black transition-colors"><Eye size={16}/> 화면 미리보기</button>
+                  </>
                 ) : (
-                  <><button onClick={() => setIsPrintDocPreview(false)} className="flex-1 py-3 bg-white border border-gray-200 rounded-xl font-black flex justify-center items-center gap-2"><ArrowLeft size={16}/> 서류 다시 선택</button><button onClick={handleForcePrint} className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-black flex justify-center items-center gap-2"><Printer size={16}/> 인쇄하기 (Ctrl+P)</button></>
+                  <>
+                    <button onClick={() => setIsPrintDocPreview(false)} className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-black flex justify-center items-center gap-2 hover:bg-gray-50 transition-colors"><ArrowLeft size={16}/> 서류 다시 선택</button>
+                    <button onClick={handleForcePrint} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-black flex justify-center items-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg"><Printer size={16}/> 실제 인쇄하기 (Ctrl+P)</button>
+                  </>
                 )}
               </div>
             </div>
@@ -1311,7 +1605,8 @@ export default function Claims() {
         )}
       </div>
 
-      <div className="print-hide-ui" style={{ position: 'absolute', top: '-9999px', left: '-9999px', zIndex: -9999 }}>
+      {/* 💡 보이지 않는 PDF 렌더링용 숨김 영역 (메일 발송 시 html2canvas 전용 영역) */}
+      <div className="print-hide-ui" style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '210mm', opacity: 0, zIndex: -9999 }}>
         <div ref={pdfContainerRef} style={{ width: '210mm' }}>
           {selectedClaim && Object.keys(emailData.files).filter(k => emailData.files[k]).map((fileName) => (
             <div key={fileName} data-docname={fileName} className="w-[210mm] h-[297mm] bg-white relative overflow-hidden shrink-0 [&>div]:w-full [&>div]:h-full" style={{ boxSizing: 'border-box' }}>{renderDocument(fileName, selectedClaim)}</div>
@@ -1319,12 +1614,16 @@ export default function Claims() {
         </div>
       </div>
 
-      {isPrintDocPreview && selectedClaim && (
-        <div className="print-page-area">
+      {/* 💡 핵심: 실제 인쇄 출력 전용 DOM (React Portal을 사용하여 body에 직접 마운트) */}
+      {isPrintDocPreview && selectedClaim && typeof document !== 'undefined' && createPortal(
+        <div className="print-only-container">
           {getDocsListForClaim(selectedClaim, claimSubject).filter(docName => printFiles[docName]).map((fileName, idx) => (
-            <div key={idx} className="print-page-break">{renderDocument(fileName, selectedClaim)}</div>
+            <div key={idx} className="print-page-break">
+              {renderDocument(fileName, selectedClaim)}
+            </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

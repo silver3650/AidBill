@@ -1,134 +1,198 @@
 import React from 'react';
 
 export default function TransactionDoc({ data, company }) {
-  const customer = data?.customers || {};
-  const product = data?.products || {};
-  const govName = customer.local_governments?.name || '지자체명 미지정';
-  const dateStr = data?.claim_date?.replace(/-/g, '. ') || '2026. 00. 00';
+  if (!data) return null;
 
-  const getFontSize = (name) => {
-    if (name.length > 15) return '1.1rem';
-    if (name.length > 10) return '1.25rem';
-    return '1.5rem';
+  const { customer, items, claim_date, total_amount } = data;
+  const comp = company || {};
+
+  // 표의 빈 칸을 채워 깔끔한 명세서 형태를 유지하기 위해 기본 10줄을 생성합니다.
+  const MAX_ROWS = 10;
+  const safeItems = items || [];
+  const displayItems = [...safeItems];
+  while (displayItems.length < MAX_ROWS) {
+    displayItems.push({ name: '', model: '', quantity: '', price: '', total: '' });
+  }
+
+  // 월/일 포맷팅
+  const formatDate = (dateStr) => {
+    if (!dateStr) return { month: '', day: '' };
+    const d = new Date(dateStr);
+    return {
+      month: String(d.getMonth() + 1).padStart(2, '0'),
+      day: String(d.getDate()).padStart(2, '0')
+    };
   };
 
+  const { month, day } = formatDate(claim_date);
+
   return (
-    <div className="bg-white w-[210mm] min-h-[297mm] p-12 font-sans border border-gray-200 shadow-sm mx-auto text-black">
-      <h1 className="text-4xl text-center font-black mb-10 tracking-widest">거 래 명 세 서</h1>
+    <div className="w-[210mm] h-[297mm] bg-white p-[15mm] text-slate-900 font-sans text-sm box-border flex flex-col relative overflow-hidden">
       
-      <div className="flex justify-between items-end mb-4">
-        <div className="text-lg font-bold">일자: {dateStr}</div>
-        <div className="text-sm font-bold text-gray-500">(공급받는자 보관용)</div>
+      {/* 타이틀 영역 */}
+      <div className="text-center mb-8 relative">
+        <h1 className="text-3xl font-black tracking-[1em] border-b-2 border-black pb-2 inline-block px-10">거래명세서</h1>
       </div>
 
-      <div className="flex border-t-2 border-b-2 border-black bg-white">
-        {/* 공급받는 자 (지자체) */}
-        <div className="w-1/2 border-r border-black p-6 flex flex-col justify-center">
-          <div className="flex items-baseline gap-2 w-full">
-            <span className="font-black truncate underline underline-offset-8" style={{ fontSize: getFontSize(govName) }}>
-              {govName}
+      {/* 상단 공급받는자 & 공급자 정보 */}
+      <div className="flex justify-between items-end mb-4 min-h-[40mm]">
+        {/* 공급받는자 (고객 또는 지자체) */}
+        <div className="w-[40%] flex flex-col justify-end pb-2">
+          <div className="flex items-end mb-2">
+            <span className="text-xl font-black border-b border-black pb-1 flex-1 text-center truncate">
+              {customer?.name}
             </span>
-            <span className="text-xl font-bold flex-shrink-0">귀하</span>
+            <span className="text-base font-bold ml-2 pb-1">귀하</span>
+          </div>
+          <div className="text-xs text-gray-600 font-bold">
+            작성일자 : {claim_date || '년 월 일'}
           </div>
         </div>
 
-        {/* 🚨 공급자 정보 (견적서와 완벽히 통일된 레이아웃) */}
-        <div className="w-1/2 p-0">
-          <table className="w-full text-[10px] border-collapse h-full">
+        {/* 공급자 정보 */}
+        <div className="w-[55%] flex">
+          {/* 공급자 텍스트 세로 정렬 */}
+          <div className="w-8 flex flex-col items-center justify-center border-y-2 border-l-2 border-black bg-gray-100 font-bold text-center text-[13px] shrink-0 gap-3">
+            <span>공</span>
+            <span>급</span>
+            <span>자</span>
+          </div>
+          {/* 💡 colgroup을 사용하여 열 너비를 완벽하게 고정합니다. */}
+          <table className="flex-1 border-collapse border-2 border-black text-[11px] table-fixed w-full">
+            <colgroup>
+              <col style={{ width: '13%' }} /> {/* 타이틀(상호, 등록번호) */}
+              <col style={{ width: '47%' }} /> {/* 텍스트(상호명) - 넓게 할당 */}
+              <col style={{ width: '10%' }} /> {/* 타이틀(대표) - 좁게 할당 */}
+              <col style={{ width: '30%' }} /> {/* 텍스트(대표명+직인) */}
+            </colgroup>
             <tbody>
-              <tr>
-                <td rowSpan="5" className="bg-gray-50 border-r border-black w-8 text-center font-bold py-1 leading-tight">
-                  공<br/>급<br/>자
-                </td>
-                <td className="border-b border-r border-black px-1.5 py-2 bg-gray-50 font-bold w-16">등록번호</td>
-                <td colSpan="3" className="border-b border-black px-2 py-2 text-center font-black text-sm tracking-tighter">
-                  {company?.business_number || '등록번호 확인 필요'}
+              <tr className="h-[7.5mm]">
+                <td className="border border-black bg-gray-100 text-center font-bold">등록번호</td>
+                <td colSpan="3" className="border border-black px-2 font-black tracking-widest text-[14px] text-left">
+                  {comp.business_number || ''}
                 </td>
               </tr>
-              <tr>
-                <td className="border-b border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold">상호</td>
-                <td className="border-b border-r border-black px-2 py-1.5 font-bold truncate max-w-[90px]">
-                  {company?.company_name}
+              <tr className="h-[7.5mm]">
+                <td className="border border-black bg-gray-100 text-center font-bold">상호</td>
+                <td className="border border-black px-2 font-bold text-left whitespace-nowrap overflow-hidden text-ellipsis">
+                  {comp.company_name || ''}
                 </td>
-                <td className="border-b border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold w-10 text-center">성명</td>
-                <td className="border-b border-black px-2 py-1.5 relative min-w-[60px]">
-                  <span className="relative z-10 font-bold">{company?.representative_name}</span>
-                  {company?.seal_image && (
-                    <img 
-                      src={company.seal_image} 
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 object-contain mix-blend-multiply max-w-none" 
-                    />
-                  )}
+                <td className="border border-black bg-gray-100 text-center font-bold">대표</td>
+                <td className="border border-black text-center font-bold px-1 relative">
+                  <div className="flex justify-center items-center w-full h-full relative z-10">
+                    <span className="mr-1">{comp.representative_name || ''}</span>
+                    {comp.representative_name && (
+                      <span className="relative inline-block whitespace-nowrap">
+                        (인)
+                        {/* 💡 직인이 (인) 글자의 정중앙에 위치하도록 설정 */}
+                        {comp.seal_image && (
+                          <img 
+                            src={comp.seal_image} 
+                            alt="도장" 
+                            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 max-w-none object-contain mix-blend-multiply opacity-90 pointer-events-none" 
+                            style={{ zIndex: -1 }}
+                          />
+                        )}
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
-              <tr>
-                <td className="border-b border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold">주소</td>
-                <td colSpan="3" className="border-b border-black px-2 py-1.5 text-[10px] leading-tight">
-                  {company?.address}{company?.detail_address ? `, ${company.detail_address}` : ''}
+              <tr className="h-[7.5mm]">
+                <td className="border border-black bg-gray-100 text-center font-bold">주소</td>
+                <td colSpan="3" className="border border-black px-2 text-left truncate">
+                  {`${comp.address || ''} ${comp.detail_address || ''}`.trim()}
                 </td>
               </tr>
-              <tr>
-                <td className="border-b border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold">업태</td>
-                <td className="border-b border-r border-black px-2 py-1.5">{company?.biz_type}</td>
-                <td className="border-b border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold text-center">종목</td>
-                <td className="border-b border-black px-2 py-1.5">{company?.biz_item}</td>
+              {/* 업태 / 종목 */}
+              <tr className="h-[7.5mm]">
+                <td className="border border-black bg-gray-100 text-center font-bold">업태</td>
+                <td className="border border-black px-2 font-bold text-left whitespace-nowrap">
+                  {comp.business_type || '도소매'}
+                </td>
+                <td className="border border-black bg-gray-100 text-center font-bold">종목</td>
+                <td className="border border-black px-2 font-bold text-left whitespace-nowrap">
+                  {comp.business_item || '의료기기'}
+                </td>
               </tr>
-              <tr>
-                <td className="border-r border-black px-1.5 py-1.5 bg-gray-50 font-bold">전화번호</td>
-                <td colSpan="3" className="px-2 py-1.5">{company?.contact_number}</td>
+              <tr className="h-[7.5mm]">
+                <td className="border border-black bg-gray-100 text-center font-bold">전화번호</td>
+                <td colSpan="3" className="border border-black px-2 font-bold text-left">
+                  {comp.contact_number || ''}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 품목 리스트 (기존 유지) */}
-      <table className="w-full border-collapse border-2 border-black text-sm mt-8 text-center">
-        <thead className="bg-gray-100 font-bold h-12">
+      {/* 합계 금액 행 */}
+      <div className="flex border-y-2 border-black py-2 mb-2 items-center bg-gray-50 px-4">
+        <span className="font-black text-sm tracking-widest mr-4">합계금액 :</span>
+        <span className="font-black text-lg tracking-wider">₩ {Number(total_amount || 0).toLocaleString()}</span>
+        <span className="text-xs text-gray-500 font-bold ml-2">(영수 / 청구)</span>
+      </div>
+
+      {/* 품목 리스트 테이블 */}
+      <table className="w-full border-collapse border-2 border-black text-[12px] flex-1 table-fixed">
+        <thead className="bg-gray-100 border-b-2 border-black">
           <tr>
-            <th className="border border-black p-2">월.일</th>
-            <th className="border border-black p-2">품목 / 규격</th>
-            <th className="border border-black p-2 w-16">수량</th>
-            <th className="border border-black p-2 w-28">단가</th>
-            <th className="border border-black p-2 w-32">공급가액</th>
-            <th className="border border-black p-2 w-20">비고</th>
+            <th className="border border-black py-2 w-[8%]">월/일</th>
+            <th className="border border-black py-2 w-[35%]">품목명</th>
+            <th className="border border-black py-2 w-[22%]">규격 (모델명)</th>
+            <th className="border border-black py-2 w-[8%]">수량</th>
+            <th className="border border-black py-2 w-[13%]">단가</th>
+            <th className="border border-black py-2 w-[14%]">공급가액</th>
           </tr>
         </thead>
         <tbody>
-          <tr className="h-12 font-bold text-base">
-            <td className="border border-black p-2">{dateStr.split('. ')[1]}.{dateStr.split('. ')[2]}</td>
-            <td className="border border-black p-2 text-left">{product.name}</td>
-            <td className="border border-black p-2">1</td>
-            <td className="border border-black p-2 text-right">{Number(product.price || 0).toLocaleString()}</td>
-            <td className="border border-black p-2 text-right">{Number(product.price || 0).toLocaleString()}</td>
-            <td className="border border-black p-2"></td>
-          </tr>
-          {[...Array(12)].map((_, i) => (
-            <tr key={i} className="h-9">
-              <td className="border border-black p-2"></td>
-              <td className="border border-black p-2"></td>
-              <td className="border border-black p-2"></td>
-              <td className="border border-black p-2"></td>
-              <td className="border border-black p-2"></td>
-              <td className="border border-black p-2"></td>
+          {displayItems.map((item, idx) => (
+            <tr key={idx} className="h-[9.5mm]">
+              <td className="border border-black text-center text-gray-600 font-bold">
+                {item.name ? `${month}/${day}` : ''}
+              </td>
+              <td className="border border-black px-2 font-bold break-words whitespace-pre-wrap leading-tight py-1 text-left">
+                {item.name || ''}
+              </td>
+              <td className="border border-black px-2 truncate text-center text-gray-700">{item.model || ''}</td>
+              <td className="border border-black text-center font-bold">{item.quantity || ''}</td>
+              <td className="border border-black text-right px-2">
+                {item.price ? Number(item.price).toLocaleString() : ''}
+              </td>
+              <td className="border border-black text-right px-2 font-black">
+                {item.total ? Number(item.total).toLocaleString() : ''}
+              </td>
             </tr>
           ))}
-        </tbody>
-        <tfoot className="bg-gray-100 font-black h-14">
-          <tr>
-            <td colSpan="2" className="border border-black p-2 text-lg">합 계 (VAT포함)</td>
-            <td colSpan="4" className="border border-black p-2 text-right text-xl pr-10">
-              ₩ {Number(product.price || 0).toLocaleString()}
+          {/* 총 합계 행 */}
+          <tr className="h-[10mm] bg-gray-50 border-t-2 border-black">
+            <td colSpan="5" className="border border-black text-center font-black tracking-widest text-sm">총 합 계</td>
+            <td className="border border-black text-right px-2 font-black text-sm text-indigo-700">
+              {Number(total_amount || 0).toLocaleString()}
             </td>
           </tr>
-        </tfoot>
+        </tbody>
       </table>
 
-      <div className="mt-10 p-6 border border-gray-300 rounded-2xl bg-gray-50 text-sm leading-relaxed">
-        <p className="font-bold mb-2">※ 알림사항</p>
-        <p>1. 본 명세서는 공급받는 자의 확인용으로 발행되었습니다.</p>
-        <p>2. 물품의 품질 및 규격에 이상이 있을 경우 7일 이내에 연락 주시기 바랍니다.</p>
+      {/* 하단 비고 및 입금 계좌 */}
+      <div className="mt-4 border-2 border-black p-3 text-xs flex justify-between h-[25mm] items-center shrink-0">
+        <div className="w-[60%] border-r border-gray-300 pr-4 h-full flex flex-col justify-center">
+          <span className="font-black block mb-1">비고:</span>
+          <p className="text-gray-600 font-bold break-keep leading-tight">
+            본 거래명세서는 보조기기 구매 증빙 및 대금 청구 목적으로 발행되었습니다.
+          </p>
+        </div>
+        <div className="w-[40%] pl-4 flex flex-col justify-center">
+          <span className="font-bold block mb-1 text-gray-800">입금 계좌 안내:</span>
+          <div className="font-black text-[13px] tracking-tight text-indigo-900">
+            {comp.bank_name || comp.bank || ''} {comp.account_number || ''}
+          </div>
+          <div className="font-bold text-gray-600 mt-0.5">
+            예금주: {comp.account_holder || comp.company_name || ''}
+          </div>
+        </div>
       </div>
+      
     </div>
   );
 }
