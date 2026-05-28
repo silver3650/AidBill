@@ -17,6 +17,7 @@ import AuthPage from './components/AuthPage';
 import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
+import ManualDownload from './components/ManualDownload'; // 💡 매뉴얼 다운로드 컴포넌트 임포트
 
 // -------------------------------------------------------------
 // 🚀 핵심 해결 로직 1: 사용자 30분 미활동 시에만 작동하는 '진짜' 자동 로그아웃 타이머
@@ -192,11 +193,13 @@ function MainLayout({ isAdmin, companyName }) {
               {activeMenu.text}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
-            {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest mr-2 shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
+          <div className="flex items-center gap-2 md:gap-4">
+            {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
             <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border">
               <Building2 size={14} className="mr-2" /> {companyName}
             </span>
+            {/* 💡 매뉴얼 다운로드 버튼 추가 */}
+            <ManualDownload />
           </div>
         </header>
 
