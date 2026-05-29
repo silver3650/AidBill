@@ -17,7 +17,16 @@ import AuthPage from './components/AuthPage';
 import LogoutButton from './components/LogoutButton';
 import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
-import ManualDownload from './components/ManualDownload'; // 💡 매뉴얼 다운로드 컴포넌트 임포트
+import ManualDownload from './components/ManualDownload';
+
+// -------------------------------------------------------------
+// 🚀 핵심 해결 로직 A: 사용자가 '직접' 로그아웃할 때만 반응하도록 Supabase 강제 조작 (Monkey Patch)
+// -------------------------------------------------------------
+const originalSignOut = supabase.auth.signOut.bind(supabase.auth);
+supabase.auth.signOut = async (options) => {
+  sessionStorage.setItem('isIntentionalLogout', 'true');
+  return await originalSignOut(options);
+};
 
 // -------------------------------------------------------------
 // 🚀 핵심 해결 로직 1: 사용자 30분 미활동 시에만 작동하는 '진짜' 자동 로그아웃 타이머
@@ -30,6 +39,7 @@ function SessionTimeoutHandler({ children }) {
     // 중복 로그아웃 방지 플래그 (세션 스토리지 사용으로 탭 간 충돌 방지)
     if (sessionStorage.getItem('isLoggingOut') === 'true') return;
     sessionStorage.setItem('isLoggingOut', 'true');
+    sessionStorage.setItem('isIntentionalLogout', 'true'); // 의도적 로그아웃으로 간주
     
     try {
       await supabase.auth.signOut();
@@ -198,7 +208,6 @@ function MainLayout({ isAdmin, companyName }) {
             <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border">
               <Building2 size={14} className="mr-2" /> {companyName}
             </span>
-            {/* 💡 매뉴얼 다운로드 버튼 추가 */}
             <ManualDownload />
           </div>
         </header>
@@ -287,33 +296,35 @@ export default function App() {
     initializeAuth();
 
     // -------------------------------------------------------------
-    // 🚀 핵심 해결 로직 2: Supabase의 가짜 SIGNED_OUT 이벤트 원천 차단
+    // 🚀 핵심 해결 로직 B: 가짜 SIGNED_OUT 이벤트 원천 차단
     // -------------------------------------------------------------
     const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!isMounted) return;
       if (event === 'INITIAL_SESSION') return;
 
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         setSession(currentSession);
         if (currentSession?.user) {
           await loadUserData(currentSession.user);
         }
       } else if (event === 'SIGNED_OUT') {
-        
-        // 브라우저 탭 절전 모드 복귀 시 발생하는 '가짜 로그아웃(False Alarm)'을 차단합니다.
-        // 이벤트를 맹신하지 않고, 서버에 한 번 더 강제로 물어봅니다.
-        const { data: { user }, error } = await supabase.auth.getUser();
-        
-        if (error || !user) {
-          // 서버에서도 죽었다고 판단하면 비로소 진짜 로그아웃 처리
+        // 사용자가 명시적으로 로그아웃한 경우에만 세션을 끊고 화면을 초기화
+        if (sessionStorage.getItem('isIntentionalLogout') === 'true') {
           setSession(null);
           setIsAdmin(false);
           setCompanyName('');
+          sessionStorage.removeItem('isIntentionalLogout');
         } else {
-          // 서버에서 유효한 유저를 살려냈다면(Refresh 성공), 세션을 즉시 복구합니다!
-          const { data: { session: recoveredSession } } = await supabase.auth.getSession();
-          setSession(recoveredSession);
-          await loadUserData(user);
+          // 가짜 로그아웃(탭 이동 복귀 시 등) 발생 시 무시하고 세션 유지
+          console.warn("⚠️ 브라우저 탭 절전모드 해제로 인한 가짜 로그아웃 감지됨. 세션을 강제로 유지합니다.");
+          
+          // 네트워크가 안정된 후 백그라운드에서 조용히 토큰만 복구 시도
+          setTimeout(async () => {
+            const { data } = await supabase.auth.getSession();
+            if (data.session && isMounted) {
+              setSession(data.session);
+            }
+          }, 3000);
         }
       }
     });

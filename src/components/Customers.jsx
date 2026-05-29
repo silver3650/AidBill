@@ -7,25 +7,28 @@ import {
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom'; 
 
+// 💡 자동 저장 훅 임포트
+import { useAutoSave } from '../hooks/useAutoSave';
+
 export default function Customers() {
   const navigate = useNavigate(); 
   const [customers, setCustomers] = useState([]);
   const [govs, setGovs] = useState([]);
   const [nhisBranches, setNhisBranches] = useState([]);
   const [products, setProducts] = useState([]); 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isGrantModalOpen, setIsGrantModalOpen] = useState(false); 
   
-  const [editingId, setEditingId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [productSearch, setProductSearch] = useState(''); 
+  // 💡 기존 useState들을 useAutoSave로 교체하여 화면 상태 유지
+  const [isModalOpen, setIsModalOpen] = useAutoSave('customers_modal_open', false);
+  const [isGrantModalOpen, setIsGrantModalOpen] = useAutoSave('customers_grant_modal_open', false); 
+  const [editingId, setEditingId] = useAutoSave('customers_editing_id', null);
+  const [searchTerm, setSearchTerm] = useAutoSave('customers_search_term', '');
+  const [productSearch, setProductSearch] = useAutoSave('customers_product_search', ''); 
+  const [selectedCustomer, setSelectedCustomer] = useAutoSave('customers_selected_customer', null);
+  const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useAutoSave('customers_primary_region', '');
+
+  // 로딩, 드래그 등의 상태는 휘발성이 적합하므로 일반 useState 유지
   const [isExtracting, setIsExtracting] = useState(false); 
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-
-  // 💡 1차 지역 필터 (모달 내)
-  const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useState('');
-
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10; 
 
@@ -35,16 +38,18 @@ export default function Customers() {
     "CU 편의점택배", "GS25 편의점택배", "직접 배송/설치", "기타"
   ];
 
-  const [formData, setFormData] = useState({
+  // 💡 대상자 폼 데이터를 useAutoSave로 변경 (작성 중 데이터 및 전자서명 완벽 보존)
+  const [formData, setFormData, clearFormData] = useAutoSave('customers_form_data', {
     name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '',
     disability_type: '', disability_level: '심함', phone: '',
     zip_code: '', address: '', detail_address: '', signature: null,
     qualification: '의료급여',
-    resident_number_front: '', // 💡 추가: 주민번호 앞자리
-    resident_number_back: ''   // 💡 추가: 주민번호 뒷자리
+    resident_number_front: '', 
+    resident_number_back: ''  
   });
 
-  const [grantData, setGrantData] = useState({
+  // 💡 교부 폼 데이터를 useAutoSave로 변경
+  const [grantData, setGrantData, clearGrantData] = useAutoSave('customers_grant_data', {
     product_id: '', product_name: '', category: '', 
     carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false 
   });
@@ -53,7 +58,7 @@ export default function Customers() {
   const [isDrawing, setIsDrawing] = useState(false);
   const fileInputRef = useRef(null); 
 
-  // 💡 지사명에서 "국민건강보험공단" 제거 함수
+  // 지사명에서 "국민건강보험공단" 제거 함수
   const cleanBranchName = (name) => name ? name.replace(/국민건강보험공단 ?/g, '') : '';
 
   useEffect(() => {
@@ -290,7 +295,6 @@ export default function Customers() {
         company_id: user.id 
       };
 
-      // 💡 암호화 처리: 건강보험/경감(건강보험)이고 뒷자리가 입력된 경우 Supabase RPC 호출
       if (editingId) {
         if (isHealthInsurance && payload.resident_number_back) {
            const { error } = await supabase.rpc('update_customer_encrypted', {
@@ -298,7 +302,6 @@ export default function Customers() {
              ...payload
            });
            if (error) {
-              // RPC가 없는 경우 일반 업데이트 시도 (기존 방식 호환)
               const { error: updateError } = await supabase.from('customers').update(payload).eq('id', editingId);
               if (updateError) throw updateError;
            }
@@ -313,12 +316,11 @@ export default function Customers() {
         if (isHealthInsurance && payload.resident_number_back) {
             const { data, error } = await supabase.rpc('insert_customer_encrypted', payload);
              if (error) {
-               // RPC가 없는 경우 일반 삽입 시도 (기존 방식 호환)
                const { data: insertData, error: insertError } = await supabase.from('customers').insert([payload]).select().single();
                if (insertError) throw insertError;
                handlePostInsert(insertData);
              } else {
-                 handlePostInsert(data); // RPC에서 생성된 ID 또는 레코드 반환한다고 가정
+                 handlePostInsert(data); 
              }
         } else {
              const { data, error } = await supabase.from('customers').insert([payload]).select().single();
@@ -349,7 +351,10 @@ export default function Customers() {
   async function handleDeleteCustomer(id) {
     if (window.confirm('대상자 정보를 삭제하시겠습니까?')) {
       const { error } = await supabase.from('customers').delete().eq('id', id);
-      if (!error) fetchData();
+      if (!error) {
+        fetchData();
+        clearFormData(); // 삭제 시 폼 데이터 잔재 방지
+      }
     }
   }
 
@@ -382,7 +387,7 @@ export default function Customers() {
       
       alert('✅ 교부 처리가 완료되었습니다! 청구 관리 탭에서 확인해주세요.');
       setIsGrantModalOpen(false); 
-      setGrantData({ product_id: '', product_name: '', category: '', carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false });
+      clearGrantData(); // 💡 완료 후 폼 초기화
       setProductSearch('');
       fetchData();
 
@@ -392,16 +397,15 @@ export default function Customers() {
     }
   }
 
-  // 💡 신규 대상자 등록 (모달 오픈)
+  // 신규 대상자 등록 (모달 오픈)
   const openCreateModal = () => {
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여', resident_number_front: '', resident_number_back: '' }); 
-    setSelectedPrimaryRegion(''); // 1차 지역 초기화
+    clearFormData(); // 💡 신규 등록 시 깨끗하게 비우기
+    setSelectedPrimaryRegion(''); 
     setEditingId(null);
     setIsModalOpen(true);
   };
 
   const openEditModal = async (c) => {
-    // 💡 수정 모달 오픈 시 복호화된 주민번호를 가져오기 (RPC 사용 가정)
     let decryptedBack = '';
     const isHealthInsurance = c.qualification === '건강보험' || c.qualification === '경감(건강보험)';
     if (isHealthInsurance) {
@@ -420,11 +424,10 @@ export default function Customers() {
       local_gov_id: c.local_gov_id?.toString() || '',
       nhis_branch_id: c.nhis_branch_id?.toString() || '', 
       qualification: c.qualification || '의료급여',
-      resident_number_front: c.resident_number_front || c.resident_number?.split('-')[0] || '', // 하위 호환
+      resident_number_front: c.resident_number_front || c.resident_number?.split('-')[0] || '', 
       resident_number_back: decryptedBack || c.resident_number_back || c.resident_number?.split('-')[1] || ''
     }); 
 
-    // 💡 수정 시 기존 데이터를 기반으로 1차 지역명 세팅
     if (isHealthInsurance) {
       const branch = nhisBranches.find(b => String(b.id) === String(c.nhis_branch_id));
       setSelectedPrimaryRegion(branch?.region?.split(' ')[0] || '');
@@ -445,8 +448,9 @@ export default function Customers() {
   };
 
   const closeModal = () => { 
-    setIsModalOpen(false); setEditingId(null); 
-    setFormData({ name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '', disability_type: '', disability_level: '심함', phone: '', zip_code: '', address: '', detail_address: '', signature: null, qualification: '의료급여', resident_number_front: '', resident_number_back: '' }); 
+    setIsModalOpen(false); 
+    setEditingId(null); 
+    clearFormData(); // 💡 닫을 때 작성 중인 폼 임시 데이터 비우기
   };
 
   const getCoordinates = (e) => {
@@ -542,7 +546,6 @@ export default function Customers() {
     currentPage * itemsPerPage
   );
 
-  // 💡 모달 내 1차(시도) / 2차(상세 기관) 필터 옵션 추출
   const isHealthInsuranceForm = formData.qualification === '건강보험' || formData.qualification === '경감(건강보험)';
   
   const primaryOptions = isHealthInsuranceForm 
@@ -778,7 +781,7 @@ export default function Customers() {
                         local_gov_id: '', 
                         nhis_branch_id: '' 
                       });
-                      setSelectedPrimaryRegion(''); // 자격 변경 시 지역 필터 리셋
+                      setSelectedPrimaryRegion(''); 
                     }}
                   >
                     <option value="의료급여">의료급여</option>
@@ -788,7 +791,6 @@ export default function Customers() {
                 </div>
               </div>
 
-              {/* 💡 관할 지역 2단계 선택 (시도 -> 상세 기관) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="flex gap-3">
                   <div className="w-2/5 space-y-1.5">
@@ -835,7 +837,6 @@ export default function Customers() {
                 </div>
               </div>
 
-              {/* 💡 주민등록번호 전체 입력 (건강보험/경감 시 활성화) */}
               <div className="space-y-1.5">
                   <label className="text-xs text-gray-400 ml-1">주민등록번호</label>
                   <div className="flex items-center gap-2">
@@ -921,7 +922,7 @@ export default function Customers() {
           <div className="bg-white w-full max-w-lg rounded-[2rem] md:rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
             <div className="p-6 md:p-8 border-b bg-blue-600 text-white flex justify-between items-center font-black shrink-0">
               <h4 className="text-lg md:text-xl">보조기기 교부</h4>
-              <button onClick={() => setIsGrantModalOpen(false)}><X size={24}/></button>
+              <button onClick={() => { setIsGrantModalOpen(false); clearGrantData(); setProductSearch(''); }}><X size={24}/></button>
             </div>
             
             <div className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
@@ -1022,7 +1023,7 @@ export default function Customers() {
             </div>
             
             <div className="p-5 md:p-8 bg-gray-50 flex gap-3 md:gap-4 shrink-0 border-t border-gray-100">
-              <button onClick={() => setIsGrantModalOpen(false)} className="flex-1 py-3.5 md:py-4 bg-white border border-gray-200 text-gray-500 rounded-xl md:rounded-2xl hover:bg-gray-100 transition-colors">취소</button>
+              <button onClick={() => { setIsGrantModalOpen(false); clearGrantData(); setProductSearch(''); }} className="flex-1 py-3.5 md:py-4 bg-white border border-gray-200 text-gray-500 rounded-xl md:rounded-2xl hover:bg-gray-100 transition-colors">취소</button>
               <button onClick={handleGrantComplete} className="flex-[2] py-3.5 md:py-4 bg-blue-600 text-white rounded-xl md:rounded-2xl shadow-xl font-black hover:bg-blue-700 transition-colors">
                 교부 완료 처리
               </button>

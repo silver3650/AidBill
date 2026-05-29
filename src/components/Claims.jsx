@@ -18,6 +18,9 @@ import TransactionDoc from '../components/documents/TransactionDoc';
 import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc';
 import Contracts from '../components/documents/Contracts'; 
 
+// 💡 새롭게 만든 자동 저장 훅 임포트
+import { useAutoSave } from '../hooks/useAutoSave';
+
 const SignaturePad = ({ onSave }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -115,45 +118,47 @@ export default function Claims() {
   const [statusFilter, setStatusFilter] = useState('전체');
   const [groupByCustomer, setGroupByCustomer] = useState(false); 
 
-  const [custSearchTerm, setCustSearchTerm] = useState('');
-  const [prodSearchTerm, setProdSearchTerm] = useState('');
-
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [activeModal, setActiveModal] = useState(null); 
-  const [selectedClaim, setSelectedClaim] = useState(null);
-  const [claimSubject, setClaimSubject] = useState('기업 (업체 위탁 청구)');
+  // 💡 기존 useState들을 모두 useAutoSave로 교체 (입력 상태 완벽 보존)
+  const [activeModal, setActiveModal] = useAutoSave('claims_active_modal', null); 
+  const [selectedClaim, setSelectedClaim] = useAutoSave('claims_selected_claim', null);
+  const [claimSubject, setClaimSubject] = useAutoSave('claims_claim_subject', '기업 (업체 위탁 청구)');
 
-  const [docInputs, setDocInputs] = useState({
+  const [custSearchTerm, setCustSearchTerm] = useAutoSave('claims_cust_search_term', '');
+  const [prodSearchTerm, setProdSearchTerm] = useAutoSave('claims_prod_search_term', '');
+
+  const [docInputs, setDocInputs] = useAutoSave('claims_doc_inputs', {
     bank: '', account_number: '', holder: '',
     claimant_name: '', claimant_relation: '', claimant_rrn: '', claimant_phone: '', claimant_sign: '' 
   });
 
-  const [newData, setNewData] = useState({ 
+  const [newData, setNewData, clearNewData] = useAutoSave('claims_new_data', { 
     customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], 
     total_amount: 0, purchase_date: '', mfg_date: '', 
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
   });
   
-  const [editData, setEditData] = useState({ 
+  const [editData, setEditData, clearEditData] = useAutoSave('claims_edit_data', { 
     claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
     notes: '', purchase_date: '', mfg_date: '', 
     prescription_image: '', inspection_image: '', purchase_proof_image: '', id_card_image: '',
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
   });
   
-  const [photoFiles, setPhotoFiles] = useState([]); 
-  const [emailData, setEmailData] = useState({ recipient: '', sender: '', subject: '', content: '', files: {} });
+  const [photoFiles, setPhotoFiles, clearPhotoFiles] = useAutoSave('claims_photo_files', []); 
+  const [emailData, setEmailData, clearEmailData] = useAutoSave('claims_email_data', { recipient: '', sender: '', subject: '', content: '', files: {} });
+  
+  const [printFiles, setPrintFiles] = useAutoSave('claims_print_files', {});
+  const [isPrintDocPreview, setIsPrintDocPreview] = useAutoSave('claims_is_print_preview', false);
+  const [isDocPreview, setIsDocPreview] = useAutoSave('claims_is_doc_preview', false); 
+  const [issueDate, setIssueDate] = useAutoSave('claims_issue_date', new Date().toISOString().split('T')[0]);
+
+  // 로딩 상태나 처리 상태는 페이지 리로드 시 초기화되는 것이 안전하므로 useState 유지
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false); 
-  const [isDocPreview, setIsDocPreview] = useState(false); 
-
-  const [printFiles, setPrintFiles] = useState({});
-  const [isPrintDocPreview, setIsPrintDocPreview] = useState(false);
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [companyInfo, setCompanyInfo] = useState({
     company_name: '', representative_name: '', representative_birth: '',
@@ -408,6 +413,8 @@ export default function Claims() {
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('claims').delete().eq('id', id);
       setActiveModal(null);
+      clearEditData();
+      clearPhotoFiles();
       if (user) fetchData(user.id);
     }
   };
@@ -476,7 +483,7 @@ export default function Claims() {
     if (!error) {
       alert('접수 완료되었습니다.'); 
       setActiveModal(null);
-      setNewData({ customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }});
+      clearNewData(); // 💡 접수 성공 시 임시 폼 초기화
       setCustSearchTerm(''); setProdSearchTerm('');
       fetchData(user.id);
     } else {
@@ -592,6 +599,8 @@ export default function Claims() {
       
       alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
+      clearEditData();   // 💡 저장 성공 시 임시 폼 초기화
+      clearPhotoFiles(); // 💡 업로드 사진 초기화
       const { data: { user } } = await supabase.auth.getUser();
       if (user) fetchData(user.id); 
       
@@ -712,6 +721,8 @@ export default function Claims() {
         await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
 
         alert('메일이 성공적으로 전송되었습니다.'); setActiveModal(null); 
+        clearEmailData(); // 💡 전송 성공 시 임시 폼 초기화
+        setIsDocPreview(false);
         const { data: { user } } = await supabase.auth.getUser(); if (user) fetchData(user.id);
       } catch (err) { alert(`메일 전송에 실패했습니다:\n${err.message || err.toString()}`); } finally { setIsSendingEmail(false); }
     }

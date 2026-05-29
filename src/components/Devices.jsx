@@ -4,6 +4,7 @@ import {
   Edit3, Trash2, Upload, CheckCircle, Building2, Banknote, Clock, Info
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useAutoSave } from '../hooks/useAutoSave'; // 💡 자동 저장 훅 임포트
 
 const NHIS_CATEGORY_DATA = {
   '수동휠체어': { standard_price: 480000, lifespan: 5 },
@@ -23,19 +24,19 @@ const NHIS_CATEGORY_DATA = {
 
 const NHIS_CATEGORIES = Object.keys(NHIS_CATEGORY_DATA);
 
-// 💡 공단(NHIS) 표준 카테고리인지 확인
+// 공단(NHIS) 표준 카테고리인지 확인
 const isStandardNHIS = (category) => NHIS_CATEGORIES.includes(category);
 
-// 💡 공단 기기 중 처방전 및 검수확인서 필요 여부 판별
+// 공단 기기 중 처방전 및 검수확인서 필요 여부 판별
 const isPrescriptionRequired = (category, name) => {
-  if (!isStandardNHIS(category)) return false; // 공단 품목이 아니면 제외
+  if (!isStandardNHIS(category)) return false; 
   const text = `${category || ''} ${name || ''}`.toLowerCase();
   const req = ['휠체어', '스쿠터', '보청기', '자세보조용구', '의지', '보조기', '교정용 신발', '이동식전동리프트'];
   return req.some(k => text.includes(k));
 };
 
 const isInspectionRequired = (category, name) => {
-  if (!isStandardNHIS(category)) return false; // 공단 품목이 아니면 제외
+  if (!isStandardNHIS(category)) return false; 
   const text = `${category || ''} ${name || ''}`.toLowerCase();
   const exempt = ['지팡이', '목발', '보행차', '보행기', '전지', '배터리', '흰지팡이'];
   return !exempt.some(k => text.includes(k));
@@ -43,12 +44,14 @@ const isInspectionRequired = (category, name) => {
 
 export default function Devices() {
   const [devices, setDevices] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [formData, setFormData] = useState({
+  // 💡 모달 상태 및 폼 데이터를 useAutoSave로 관리하여 새로고침 시에도 유지
+  const [isModalOpen, setIsModalOpen] = useAutoSave('devices_modal_open', false);
+  const [searchTerm, setSearchTerm] = useAutoSave('devices_search_term', '');
+  const [editingId, setEditingId] = useAutoSave('devices_editing_id', null);
+
+  const [formData, setFormData, clearFormData] = useAutoSave('devices_form_data', {
     name: '',
     category: '',
     customCategory: '',
@@ -195,7 +198,7 @@ export default function Devices() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ name: '', category: '', customCategory: '', standard_price: '', price: '', tax_type: '영세', manufacturer: '', lifespan: '', image: null });
+    clearFormData(); // 💡 닫을 때 폼 데이터 깔끔하게 초기화
   };
 
   const filteredDevices = devices.filter(d => 
@@ -211,7 +214,7 @@ export default function Devices() {
           <p className="text-gray-500 mt-2 font-medium text-sm md:text-base">청구 가능한 장애인보조기기 단가 및 카테고리를 관리합니다.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => { clearFormData(); setIsModalOpen(true); }} // 💡 열 때 폼 데이터 초기화
           className="w-full md:w-auto bg-indigo-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:scale-105 transition-all"
         >
           <Plus size={22} /> 품목 등록
@@ -257,7 +260,6 @@ export default function Devices() {
                   <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg tracking-widest uppercase">
                     {device.category}
                   </span>
-                  {/* 💡 공단(NHIS) 카테고리이면서 조건 충족 시에만 뱃지 표시 */}
                   {isPrescriptionRequired(device.category, device.name) && (
                     <span className="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-500 text-[9px] font-black rounded border border-rose-100 shadow-sm">처방전</span>
                   )}
