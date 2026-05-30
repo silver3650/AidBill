@@ -122,7 +122,7 @@ export default function Claims() {
   const itemsPerPage = 10;
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // 💡 기존 useState들을 모두 useAutoSave로 교체 (입력 상태 완벽 보존)
+  // 💡 자동 저장 훅
   const [activeModal, setActiveModal] = useAutoSave('claims_active_modal', null); 
   const [selectedClaim, setSelectedClaim] = useAutoSave('claims_selected_claim', null);
   const [claimSubject, setClaimSubject] = useAutoSave('claims_claim_subject', '기업 (업체 위탁 청구)');
@@ -156,7 +156,7 @@ export default function Claims() {
   const [isDocPreview, setIsDocPreview] = useAutoSave('claims_is_doc_preview', false); 
   const [issueDate, setIssueDate] = useAutoSave('claims_issue_date', new Date().toISOString().split('T')[0]);
 
-  // 로딩 상태나 처리 상태는 페이지 리로드 시 초기화되는 것이 안전하므로 useState 유지
+  // 로딩 상태나 처리 상태는 일반 useState
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false); 
 
@@ -240,18 +240,29 @@ export default function Claims() {
 
   useEffect(() => {
     async function initialize() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) return;
+      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
+      const { data: { session }, error } = await supabase.auth.getSession();
+      const user = session?.user;
+      
+      if (error || !user) return; // 에러가 나면 조용히 종료
       await fetchCompanyData(user.id);
       await fetchData(user.id);
     }
     initialize();
 
+    // 💡 탭으로 다시 돌아왔을 때 데이터를 자동으로 갱신하여 텅 빈 표를 방지
+    const handleFocus = () => initialize();
+    window.addEventListener('focus', handleFocus);
+
     const script = document.createElement('script');
     script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
     script.async = true;
     document.body.appendChild(script);
-    return () => { if (document.body.contains(script)) document.body.removeChild(script); };
+    
+    return () => { 
+      if (document.body.contains(script)) document.body.removeChild(script); 
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -410,7 +421,9 @@ export default function Claims() {
 
   const handleDelete = async (id) => {
     if (window.confirm('이 청구 내역을 영구 삭제하시겠습니까?')) {
-      const { data: { user } } = await supabase.auth.getUser();
+      // 💡 안전한 로컬 세션 확인
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       await supabase.from('claims').delete().eq('id', id);
       setActiveModal(null);
       clearEditData();
@@ -451,7 +464,9 @@ export default function Claims() {
       alert('보청기 좌/우 중 최소 1개 이상을 선택해 주세요.'); return;
     }
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // 💡 네트워크 오류 방지 getSession 사용
+    const { data: { session }, error: userError } = await supabase.auth.getSession();
+    const user = session?.user;
     if (userError || !user) { alert('로그인 세션이 만료되었습니다.'); return; }
 
     const selectedCustomer = allCustomers.find(c => String(c.id) === String(newData.customer_id));
@@ -483,7 +498,7 @@ export default function Claims() {
     if (!error) {
       alert('접수 완료되었습니다.'); 
       setActiveModal(null);
-      clearNewData(); // 💡 접수 성공 시 임시 폼 초기화
+      clearNewData(); 
       setCustSearchTerm(''); setProdSearchTerm('');
       fetchData(user.id);
     } else {
@@ -599,9 +614,12 @@ export default function Claims() {
       
       alert('내역 수정 및 저장이 완료되었습니다.'); 
       setActiveModal(null); 
-      clearEditData();   // 💡 저장 성공 시 임시 폼 초기화
-      clearPhotoFiles(); // 💡 업로드 사진 초기화
-      const { data: { user } } = await supabase.auth.getUser();
+      clearEditData();   
+      clearPhotoFiles(); 
+      
+      // 💡 안전한 세션 갱신
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (user) fetchData(user.id); 
       
     } catch (error) {
@@ -616,7 +634,8 @@ export default function Claims() {
       const { error } = await supabase.from('claims').update({ status: '청구 완료 (계산서 발행)' }).eq('id', id);
       if (!error) {
         alert('승인되었습니다.');
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
         if (user) fetchData(user.id);
       } else { alert('DB 상태 변경 중 에러가 발생했습니다.'); }
     }
@@ -627,7 +646,8 @@ export default function Claims() {
       const { error } = await supabase.from('claims').update({ status: '정산 완료' }).eq('id', id);
       if (!error) {
         alert('최종 완료로 마감되었습니다.');
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
         if (user) fetchData(user.id);
       } else { alert('오류가 발생했습니다.'); }
     }
@@ -721,9 +741,11 @@ export default function Claims() {
         await supabase.from('claims').update({ status: '청구 완료 (계산서 미발행)' }).eq('id', selectedClaim.id);
 
         alert('메일이 성공적으로 전송되었습니다.'); setActiveModal(null); 
-        clearEmailData(); // 💡 전송 성공 시 임시 폼 초기화
+        clearEmailData(); 
         setIsDocPreview(false);
-        const { data: { user } } = await supabase.auth.getUser(); if (user) fetchData(user.id);
+        const { data: { session } } = await supabase.auth.getSession(); 
+        const user = session?.user;
+        if (user) fetchData(user.id);
       } catch (err) { alert(`메일 전송에 실패했습니다:\n${err.message || err.toString()}`); } finally { setIsSendingEmail(false); }
     }
   };
@@ -775,7 +797,6 @@ export default function Claims() {
         </tbody>
       </table>
       <div className="flex-1 flex flex-col justify-center px-6 leading-10 text-[15px] font-bold text-gray-800 tracking-tight"><p className="text-justify indent-4">위 위임자는 「국민건강보험법」 제51조, 같은 법 시행규칙 제26조 및 「장애인보조기기 보험급여 기준 등에 관한 규칙」에 따라 보조기기 급여비용의 지급 청구 및 수령에 관한 일체의 권한을 위 수임자(대리인)에게 위임합니다.</p></div>
-      {/* 💡 2. 위임장 작성일을 청구일(claim_date)로 표시 */}
       <div className="text-center font-black text-lg mt-10 mb-16 tracking-widest">{claimData.claim_date?.split('-')[0]}년 &nbsp;&nbsp; {claimData.claim_date?.split('-')[1]}월 &nbsp;&nbsp; {claimData.claim_date?.split('-')[2]}일</div>
       <div className="flex justify-end items-center text-[15px] font-bold pr-12 mb-20 relative"><span className="mr-4 text-gray-600">위임자(수급자) :</span><span className="mr-12 font-black text-lg">{claimData.customers?.name}</span><span className="text-gray-400 text-sm">(서명 또는 인)</span>{claimData.customers?.signature && (<img src={claimData.customers.signature} alt="서명" className="absolute right-6 top-1/2 -translate-y-1/2 w-[25mm] h-[15mm] object-contain mix-blend-multiply" />)}</div>
     </div>
@@ -811,7 +832,7 @@ export default function Claims() {
     if (qual.includes('기초') || qual.includes('의료급여')) copayRate = 0;
     else if (qual.includes('경감')) copayRate = 0.05;
 
-    // 💡 보청기 2행 처리 및 가격 보정
+    // 보청기 2행 처리 및 가격 보정
     let claimItems = [];
     if (claimData.item_type === 'hearing_aid') {
       adjustedStandardPrice = 1310000;
@@ -820,7 +841,6 @@ export default function Claims() {
       adjustedNoticePrice = rPrice + lPrice;
       adjustedActualPrice = Number(claimData.total_amount) || 0;
 
-      // 보청기가 선택되었을 경우 2개의 행(배열)으로 쪼개서 items를 생성
       if (claimData.hearing_aid_details?.right?.enabled) {
         const rightDev = allDevices.find(d => String(d.id) === String(claimData.hearing_aid_details.right.product_id));
         claimItems.push({
@@ -842,7 +862,6 @@ export default function Claims() {
         });
       }
     } else {
-      // 일반 상품일 경우 1줄짜리 배열
       claimItems.push({
         name: claimData.products?.category ? `[${claimData.products?.category}] ${claimData.products?.name}` : (claimData.products?.name || '품목 미정'),
         model: claimData.products?.model || '',
@@ -856,7 +875,6 @@ export default function Claims() {
     const calculatedCopay = Math.floor(baseCalcPrice * copayRate);
     const calculatedClaimAmount = baseCalcPrice - calculatedCopay;
 
-    // 💡 거래명세서 수신자 (공급받는자) 분기 로직
     const isLocalGov = !isNHISClaim(claimData);
     const transactionRecipientName = isLocalGov ? (claimData.customers?.local_governments?.name || claimData.customers?.name) : claimData.customers?.name;
 
@@ -868,10 +886,9 @@ export default function Claims() {
       base_calc_price: baseCalcPrice,              
       customer: {
         ...claimData.customers,
-        // 거래명세서일 경우에만 대상자 이름 또는 지자체 이름으로 덮어씀
         name: fileName === '거래명세서' ? transactionRecipientName : claimData.customers?.name
       }, 
-      items: claimItems, // 💡 TransactionDoc 렌더링용 배열 추가
+      items: claimItems, 
       product: {
         ...claimData.products,
         standard_price: adjustedStandardPrice,
@@ -897,7 +914,6 @@ export default function Claims() {
 
     if (TargetDoc) {
       try { 
-        // 💡 1. 거래명세서가 A4 밖으로 넘어가지 않도록 transform scale 을 적용
         const isTransaction = fileName === '거래명세서';
         return (
           <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
@@ -934,7 +950,6 @@ export default function Claims() {
     } else if (fileName === '신분증 및 복지카드 사본' || fileName === '신분증 또는 복지카드 사본') {
       return <ImageOnlyDoc title="신분증 및 복지카드 사본" src={adjustedClaimData.id_card_image} notice="* 개인정보보호법에 따라 주민등록번호 뒷자리는 반드시 마스킹 처리되어야 합니다." emptyMessage="청구 내역 수정(편집) 화면에서 신분증/복지카드 사본을 등록해 주세요." />;
     } else if (fileName === '교부(판매)업체 자격사항 서류') {
-      // 💡 3. 업체 자격 서류 이미지가 꽉 차고 크게 보이도록 스타일 전면 수정
       return (
         <div className="bg-white w-[210mm] h-[297mm] p-[15mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
           <h2 className="text-2xl font-black mb-6 text-center tracking-widest">업체 자격 서류</h2>
@@ -1074,9 +1089,7 @@ export default function Claims() {
               background: white !important; 
             }
             
-            /* 💡 핵심: 앱의 모든 UI 요소(root 및 기타)를 감춥니다. 
-               이 때, display:none 대신 visibility: hidden을 사용하여 
-               브라우저의 렌더링 최적화 버그(하얗게 나오는 현상)를 방지합니다. */
+            /* 💡 핵심: 앱의 모든 UI 요소(root 및 기타)를 감춥니다. */
             body * { 
               visibility: hidden; 
             }

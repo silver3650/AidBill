@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Building, MapPin, Image as ImageIcon, Save, 
-  Upload, Clock, Search, FileText, Stamp, CreditCard, Plus, Trash2
+  Upload, Clock, Search, FileText, Stamp, CreditCard, Plus, Trash2, Award, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -11,17 +11,58 @@ const DOC_TYPES = [
   '의지·보조기 제조·수리업 신고증'
 ];
 
+// 💡 새로운 요금 정책 적용
+const PLAN_DETAILS = {
+  starter: { id: 'starter', name: '스타터 (기본)', baseFee: 0, desc: '월 2건 무료 / 초과 건당 5,000원' },
+  standard: { id: 'standard', name: '스탠다드', baseFee: 49000, desc: '월 10건 무료 / 초과 건당 3,000원' },
+  pro: { id: 'pro', name: '프로', baseFee: 99000, desc: '월 30건 무료 / 초과 건당 2,000원' },
+  enterprise: { id: 'enterprise', name: '엔터프라이즈', baseFee: 0, desc: '무제한 청구 및 맞춤 설정' }
+};
+
+// 💡 플랜 동기화 핵심 로직
+const resolveActivePlan = (compData) => {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  
+  let currentPlan = compData.subscription_plan || 'starter';
+  let pendingPlan = compData.pending_plan || null;
+
+  if (pendingPlan && compData.next_plan_apply_date && todayStr >= compData.next_plan_apply_date) {
+    currentPlan = pendingPlan;
+    pendingPlan = null;
+  }
+
+  currentPlan = currentPlan === 'free' ? 'starter' : (currentPlan === 'basic' ? 'standard' : currentPlan);
+  if (pendingPlan) {
+    pendingPlan = pendingPlan === 'free' ? 'starter' : (pendingPlan === 'basic' ? 'standard' : pendingPlan);
+  }
+
+  const signUpDate = compData.created_at ? new Date(compData.created_at) : today;
+  const isFirstMonth = (today.getFullYear() === signUpDate.getFullYear() && today.getMonth() === signUpDate.getMonth());
+  
+  if (!compData.plan_changed_at && isFirstMonth) {
+    currentPlan = 'starter';
+  }
+
+  return { activePlan: currentPlan, pendingPlan };
+};
+
 export default function CompanyProfile() {
   const [isLoading, setIsLoading] = useState(false);
+  
   const [formData, setFormData] = useState({
     company_name: '', business_number: '', biz_type: '', biz_item: '',
     representative_name: '', representative_birth: '', contact_number: '',
     email: '', zip_code: '', address: '', detail_address: '',
-    // 💡 실제 DB 컬럼에 맞게 bank_name 으로 복구
     bank_name: '', account_number: '', account_holder: '',
     seal_image: null, biz_reg_image: null, bankbook_image: null,
-    qualifying_docs: [] 
+    qualifying_docs: [],
+    subscription_plan: 'starter', 
+    pending_plan: null,
+    plan_changed_at: null
   });
+
+  const [selectedPlan, setSelectedPlan] = useState('starter'); 
 
   useEffect(() => {
     let isMounted = true;
@@ -32,15 +73,21 @@ export default function CompanyProfile() {
     
     async function fetchCompanyData() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) return;
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error || !session?.user) return;
         
         const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
         
         if (data && isMounted) {
+          // 💡 동기화 로직 적용
+          const { activePlan, pendingPlan } = resolveActivePlan(data);
+          
+          setSelectedPlan(activePlan);
           setFormData(prev => ({ 
             ...prev, 
             ...data, 
+            subscription_plan: activePlan,
+            pending_plan: pendingPlan,
             qualifying_docs: data.qualifying_docs || prev.qualifying_docs 
           }));
         }
@@ -51,9 +98,13 @@ export default function CompanyProfile() {
     
     fetchCompanyData();
     
+    const handleFocus = () => fetchCompanyData();
+    window.addEventListener('focus', handleFocus);
+
     return () => { 
       isMounted = false;
-      document.body.removeChild(script); 
+      window.removeEventListener('focus', handleFocus);
+      if (document.body.contains(script)) document.body.removeChild(script); 
     };
   }, []);
 
@@ -137,7 +188,9 @@ export default function CompanyProfile() {
         throw new Error('로그인 세션이 만료되었습니다. 새로고침 후 다시 시도해주세요.');
       }
 
-      const payload = { ...formData, company_id: session.user.id };
+      // 플랜 관리는 별도 버튼으로 처리하므로 제외
+      const { subscription_plan, pending_plan, plan_changed_at, ...pureData } = formData;
+      const payload = { ...pureData, company_id: session.user.id };
 
       const { error } = await supabase
         .from('company_profile')
@@ -149,19 +202,70 @@ export default function CompanyProfile() {
       
       const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
       if (data) {
+        const { activePlan, pendingPlan } = resolveActivePlan(data);
         setFormData(prev => ({ 
           ...prev, 
           ...data, 
+          subscription_plan: activePlan,
+          pending_plan: pendingPlan,
           qualifying_docs: data.qualifying_docs || prev.qualifying_docs 
         }));
       }
     } catch (error) {
       console.error("저장 오류 상세:", error);
-      alert(`저장 실패: ${error.message || '서버 에러'}\n(F12를 눌러 콘솔 창의 빨간색 에러 메시지를 확인해 주세요)`);
+      alert(`저장 실패: ${error.message || '서버 에러'}`);
     } finally {
       setIsLoading(false);
     }
   }
+
+  // 💡 업체 스스로 구독 플랜 변경 핸들러
+  const handlePlanChange = async (newPlanId) => {
+    const currentPlanId = formData.subscription_plan || 'starter';
+    
+    if (currentPlanId === newPlanId && !formData.pending_plan) {
+      return alert('이미 해당 플랜을 이용 중입니다.');
+    }
+
+    const currentBase = PLAN_DETAILS[currentPlanId]?.baseFee || 0;
+    const newBase = PLAN_DETAILS[newPlanId]?.baseFee || 0;
+
+    let updatePayload = { plan_changed_at: new Date().toISOString() };
+
+    if (newBase > currentBase) {
+      if (!window.confirm(`[업그레이드] 즉시 '${PLAN_DETAILS[newPlanId].name}' 플랜으로 변경하시겠습니까?\n업그레이드는 결제 즉시 반영되며, 늘어난 혜택을 바로 누리실 수 있습니다.`)) return;
+      updatePayload.subscription_plan = newPlanId;
+      updatePayload.pending_plan = null;
+      updatePayload.next_plan_apply_date = null;
+    } else if (newBase < currentBase) {
+      if (!window.confirm(`[다운그레이드] '${PLAN_DETAILS[newPlanId].name}' 플랜으로 변경 예약하시겠습니까?\n다운그레이드는 다음 달 1일부터 적용되며, 이번 달까지는 기존 플랜의 혜택이 유지됩니다.`)) return;
+      updatePayload.pending_plan = newPlanId;
+      
+      const nextMonth = new Date();
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      nextMonth.setDate(1);
+      updatePayload.next_plan_apply_date = nextMonth.toISOString().split('T')[0];
+    } else {
+       if (!window.confirm(`'${PLAN_DETAILS[newPlanId].name}' 플랜으로 설정을 변경(또는 다운그레이드 예약 취소)하시겠습니까?`)) return;
+       updatePayload.subscription_plan = newPlanId;
+       updatePayload.pending_plan = null;
+       updatePayload.next_plan_apply_date = null;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.from('company_profile')
+        .update(updatePayload)
+        .eq('company_id', session.user.id);
+      
+      if (error) throw error;
+      alert('구독 플랜 설정이 성공적으로 변경되었습니다.');
+      
+      setFormData(prev => ({ ...prev, ...updatePayload }));
+    } catch (error) {
+      alert('플랜 변경 중 오류가 발생했습니다: ' + error.message);
+    }
+  };
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-20 font-sans">
@@ -181,6 +285,56 @@ export default function CompanyProfile() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         <div className="lg:col-span-2 space-y-6 md:space-y-8">
+          
+          {/* 💡 구독 플랜 관리 섹션 추가 */}
+          <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
+            <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
+              <Award className="text-indigo-600" size={20} /> 구독 멤버십 플랜 관리
+            </h3>
+            
+            <div className="p-5 bg-gray-50 rounded-2xl border border-gray-200 space-y-4">
+              <div className="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1">현재 이용 중인 플랜</p>
+                  <p className="text-lg font-black text-indigo-700">
+                    {PLAN_DETAILS[formData.subscription_plan]?.name || '스타터'}
+                  </p>
+                </div>
+                {formData.pending_plan && (
+                  <div className="text-right">
+                    <p className="text-xs font-bold text-amber-600 mb-1 flex items-center gap-1 justify-end"><AlertTriangle size={14}/> 변경 예약됨</p>
+                    <p className="text-sm font-bold text-gray-700">다음 달 1일부터 <span className="text-indigo-600 font-black">{PLAN_DETAILS[formData.pending_plan]?.name}</span>(으)로 변경됩니다.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-gray-200">
+                <label className="text-xs font-extrabold text-gray-800 mb-2 block">플랜 변경 (업그레이드 / 다운그레이드)</label>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <select 
+                    className="flex-1 bg-white p-3.5 rounded-xl border border-gray-200 outline-none font-bold text-gray-800 focus:border-indigo-500 transition-all"
+                    value={selectedPlan}
+                    onChange={e => setSelectedPlan(e.target.value)}
+                  >
+                    {Object.values(PLAN_DETAILS).map(plan => (
+                      <option key={plan.id} value={plan.id}>{plan.name} - {plan.desc}</option>
+                    ))}
+                  </select>
+                  <button 
+                    onClick={() => handlePlanChange(selectedPlan)}
+                    className="px-6 py-3.5 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 transition-all whitespace-nowrap shadow-md"
+                  >
+                    선택한 플랜으로 변경
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 font-bold mt-3 leading-relaxed">
+                  * 더 높은 상위 플랜으로 업그레이드 시 즉시 반영되며 혜택이 늘어납니다.<br/>
+                  * 하위 플랜으로 다운그레이드 시 이번 달까지는 기존 혜택이 유지되고, 다음 달 1일부터 새로운 플랜이 적용됩니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
             <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
               <Building className="text-blue-600" size={20} /> 기본 정보
@@ -230,7 +384,6 @@ export default function CompanyProfile() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
               <div className="space-y-1.5 md:space-y-2">
                 <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">금융기관(은행명)</label>
-                {/* 💡 bank_name 으로 복구 */}
                 <input type="text" className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border-none outline-none font-bold text-gray-800 focus:ring-2 focus:ring-blue-600 transition-all text-sm md:text-base" placeholder="예: 기업은행" value={formData.bank_name || ''} onChange={e => setFormData({...formData, bank_name: e.target.value})} />
               </div>
               <div className="space-y-1.5 md:space-y-2 md:col-span-1">

@@ -4,10 +4,11 @@ import {
   Upload, ArrowRight, CheckCircle2, Loader2, Award, X, FileText, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { useAutoSave } from '../hooks/useAutoSave'; // 💡 자동 저장 훅 임포트
+import { useAutoSave } from '../hooks/useAutoSave';
 
+// 💡 새로운 요금 정책으로 업데이트 됨
 const SUBSCRIPTION_PLANS = [
-  { id: 'starter', name: '스타터', price: '0원', desc: '월 2건 이하 무료 지원. 시스템 도입 전 테스트용으로 적합한 스타터 플랜입니다.' },
+  { id: 'starter', name: '스타터', price: '0원', desc: '월 2건 이하 무료 지원 (초과 시 건당 5,000원 과금). 시스템 도입 전 테스트용으로 적합한 플랜입니다.' },
   { id: 'standard', name: '스탠다드', price: '49,000원', desc: '월 10건 기본 제공 (초과 시 건당 3,000원 과금). 일반적인 중소규모 업체에 적합한 표준 플랜입니다.' },
   { id: 'pro', name: '프로', price: '99,000원', desc: '월 30건 기본 제공 (초과 시 건당 2,000원 과금). 매월 청구 건수가 많은 활발한 업체에 권장합니다.' },
   { id: 'enterprise', name: '엔터프라이즈', price: '별도 협의', desc: '무제한 청구 및 맞춤형 커스텀 기능 제공. 보조기기 제조사 및 전국 단위 대형 업체에 적합합니다.' }
@@ -36,7 +37,6 @@ export default function AuthPage() {
   const [termsText, setTermsText] = useState('이용약관 내용을 불러오는 중...');
   const [privacyText, setPrivacyText] = useState('개인정보 처리방침을 불러오는 중...');
 
-  // 💡 useState 대신 useAutoSave 사용 (작성 중 새로고침해도 데이터 유지)
   const [formData, setFormData, clearFormData] = useAutoSave('auth_draft', {
     companyName: '', bizRegNumber: '', ownerName: '',
     ownerBirthDate: '', phone: '', email: '', password: '', bizLicense: null,
@@ -136,7 +136,7 @@ export default function AuthPage() {
           if (dbError) throw new Error(`업체 정보 저장 실패: ${dbError.message}`);
           alert('🎉 기업 회원가입이 완료되었습니다!\n관리자 승인 후 정식으로 이용하실 수 있습니다.');
           
-          clearFormData(); // 💡 가입 성공 시 임시 저장된 폼 데이터 초기화
+          clearFormData(); 
 
         } else {
           const { error: dbError } = await supabase.from('individual_profile').insert([{
@@ -153,7 +153,7 @@ export default function AuthPage() {
           }
           alert('🎉 개인 회원가입이 완료되었습니다!\n이제 로그인하여 서비스를 이용하실 수 있습니다.');
           
-          clearFormData(); // 💡 가입 성공 시 임시 저장된 폼 데이터 초기화
+          clearFormData();
         }
 
         if (isMountedRef.current) setIsLogin(true);

@@ -13,10 +13,20 @@ export default function NHISBranches() {
 
   useEffect(() => {
     fetchBranches();
+    
+    // 💡 탭 이동 후 복귀 시 자동 갱신 방어벽 추가 (빈 화면 방지)
+    const handleFocus = () => fetchBranches();
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const fetchBranches = async () => {
     try {
+      setLoading(true);
+      // 💡 로컬 지사 목록 조회이므로 인증 체크 없이 바로 데이터를 가져오되, 에러 발생 시 부드럽게 무시합니다.
       const { data, error } = await supabase.from('nhis_branches').select('*').order('name');
       if (error) throw error;
       setBranches(data || []);

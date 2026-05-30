@@ -11,6 +11,47 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 
+// 💡 새로운 요금 정책 고정값 세팅
+const getPlanDetails = (planId) => {
+  switch(planId) {
+    case 'starter': return { id: 'starter', name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+    case 'standard': return { id: 'standard', name: '스탠다드', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
+    case 'pro': return { id: 'pro', name: '프로', baseFee: 99000, freeLimit: 30, overageRate: 2000 };
+    case 'enterprise': return { id: 'enterprise', name: '엔터프라이즈', baseFee: 0, freeLimit: 999999, overageRate: 0 };
+    case 'free': return { id: 'starter', name: '스타터(구)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+    case 'basic': return { id: 'standard', name: '스탠다드(구)', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
+    default: return { id: 'starter', name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+  }
+};
+
+// 💡 플랜 동기화 핵심 로직 (업그레이드/다운그레이드/첫달무료 완벽 제어)
+const resolveActivePlan = (compData) => {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  
+  let currentPlan = compData.subscription_plan || 'starter';
+  let pendingPlan = compData.pending_plan || null;
+
+  // 1. 다운그레이드 예약 일자가 지났다면 예약된 플랜을 현재 플랜으로 강제 적용
+  if (pendingPlan && compData.next_plan_apply_date && todayStr >= compData.next_plan_apply_date) {
+    currentPlan = pendingPlan;
+    pendingPlan = null;
+  }
+
+  // 2. 구버전 데이터 호환
+  currentPlan = currentPlan === 'free' ? 'starter' : (currentPlan === 'basic' ? 'standard' : currentPlan);
+
+  // 3. 가입 첫 달 무료 적용 (단, 사용자가 요금제를 '명시적으로' 변경한 이력이 있다면 첫달이라도 변경된 요금제 존중)
+  const signUpDate = compData.created_at ? new Date(compData.created_at) : today;
+  const isFirstMonth = (today.getFullYear() === signUpDate.getFullYear() && today.getMonth() === signUpDate.getMonth());
+  
+  if (!compData.plan_changed_at && isFirstMonth) {
+    currentPlan = 'starter';
+  }
+
+  return { activePlan: currentPlan };
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -24,21 +65,54 @@ export default function Dashboard() {
     totalActiveMonth: 0
   });
   
-  const [rawClaims, setRawClaims] = useState([]); // DB에서 가져온 원본 데이터 캐싱
+  const [rawClaims, setRawClaims] = useState([]); 
   const [recentClaims, setRecentClaims] = useState([]);
   const [chartFilter, setChartFilter] = useState('monthly');
   const [chartData, setChartData] = useState([]);
   const [monthToggle, setMonthToggle] = useState('this'); 
+  
+  const [planInfo, setPlanInfo] = useState(getPlanDetails('starter'));
 
-  // 💡 1. 최초 1회 렌더링 시 인증 검사 및 DB 데이터 동시 로드
+  const fetchDashboardData = async (user) => {
+    try {
+      const [claimsRes, custRes, compRes] = await Promise.all([
+        supabase.from('claims').select('*').eq('company_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('customers').select('id, name').eq('company_id', user.id),
+        supabase.from('company_profile').select('*').eq('company_id', user.id).maybeSingle()
+      ]);
+
+      if (claimsRes.error) throw claimsRes.error;
+      if (custRes.error) throw custRes.error;
+
+      const claimsData = claimsRes.data || [];
+      const custData = custRes.data || [];
+      const compData = compRes.data || {};
+
+      // 💡 동기화 로직 적용
+      const { activePlan } = resolveActivePlan(compData);
+      setPlanInfo(getPlanDetails(activePlan));
+
+      const mergedClaims = claimsData.map(claim => {
+        const matchedCust = custData.find(c => String(c.id) === String(claim.customer_id));
+        return {
+          ...claim,
+          customerName: matchedCust ? matchedCust.name : '대상자 미상'
+        };
+      });
+      
+      setRawClaims(mergedClaims);
+    } catch (e) {
+      console.error("대시보드 데이터 로드 에러:", e);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
     let timeoutId;
+    let currentUser = null;
 
     async function initializeDashboard() {
       try {
-        // 💡 수정됨: getUser() 대신 getSession() 사용
-        // 서버 통신 에러로 인한 일시적인 데이터 증발(빈 화면) 현상을 방지합니다.
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError || !session || !session.user) {
@@ -46,32 +120,9 @@ export default function Dashboard() {
           return; 
         }
         
-        const user = session.user;
+        currentUser = session.user;
+        await fetchDashboardData(currentUser);
 
-        // 청구 데이터와 대상자 데이터를 병렬로 동시에 불러옵니다.
-        const [claimsRes, custRes] = await Promise.all([
-          supabase.from('claims').select('*').eq('company_id', user.id).order('created_at', { ascending: false }),
-          supabase.from('customers').select('id, name').eq('company_id', user.id)
-        ]);
-
-        if (claimsRes.error) throw claimsRes.error;
-        if (custRes.error) throw custRes.error;
-
-        if (isMounted) {
-          const claimsData = claimsRes.data || [];
-          const custData = custRes.data || [];
-
-          // 청구 내역의 customer_id와 대상자의 id를 매칭하여 '이름'을 결합합니다.
-          const mergedClaims = claimsData.map(claim => {
-            const matchedCust = custData.find(c => String(c.id) === String(claim.customer_id));
-            return {
-              ...claim,
-              customerName: matchedCust ? matchedCust.name : '대상자 미상'
-            };
-          });
-          
-          setRawClaims(mergedClaims);
-        }
       } catch(e) {
         console.error("대시보드 초기화 에러:", e);
       } finally {
@@ -82,7 +133,11 @@ export default function Dashboard() {
     setLoading(true);
     initializeDashboard();
 
-    // 💡 수정됨: 안전장치 (네트워크 Hang 발생 시 8초 후 무조건 로딩 스피너 해제)
+    const handleFocus = () => {
+      if (currentUser) fetchDashboardData(currentUser);
+    };
+    window.addEventListener('focus', handleFocus);
+
     timeoutId = setTimeout(() => {
       if (isMounted) setLoading(false);
     }, 8000);
@@ -90,10 +145,10 @@ export default function Dashboard() {
     return () => { 
       isMounted = false; 
       clearTimeout(timeoutId);
+      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
-  // 💡 2. 데이터 가공 로직 (차트 필터가 바뀔 때 DB 재요청 없이 즉시 화면만 갱신)
   useEffect(() => {
     if (loading || !rawClaims) return;
 
@@ -159,7 +214,6 @@ export default function Dashboard() {
 
     setRecentClaims(safeClaims.slice(0, 5));
 
-    // 차트 데이터 계산
     const trendData = [];
     if (chartFilter === 'weekly') {
       for (let i = 6; i >= 0; i--) {
@@ -204,6 +258,21 @@ export default function Dashboard() {
 
   const activeData = monthToggle === 'this' ? stats.thisMonth : stats.prevMonth;
 
+  let usageSubText = '';
+  let isOverLimit = false;
+
+  if (planInfo.id !== 'enterprise') {
+    const overage = Math.max(0, activeData.receipts - planInfo.freeLimit);
+    if (overage > 0) {
+      isOverLimit = true;
+      usageSubText = `🔥 무료 한도 초과 (+${overage}건) / 초과 건당 ${planInfo.overageRate.toLocaleString()}원 과금`;
+    } else {
+      usageSubText = `잔여 무료 건수: ${planInfo.freeLimit - activeData.receipts}건 남음`;
+    }
+  } else {
+     usageSubText = '무제한 요금제 이용 중';
+  }
+
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-700 pb-10 font-sans">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -229,10 +298,42 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-        <StatCard title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 접수건`} value={activeData.receipts.toLocaleString()} unit="건" icon={<Users className="text-blue-600" />} color="bg-blue-50" />
-        <StatCard title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 청구 현황`} value={activeData.amount.toLocaleString()} unit="원" subText={`청구 완료 ${activeData.claims.toLocaleString()}건`} icon={<FileText className="text-indigo-600" />} color="bg-indigo-50" />
-        <StatCard title="누적 청구 금액" value={stats.cumulative.amount.toLocaleString()} unit="원" subText={`총 누적 접수 ${stats.cumulative.claims.toLocaleString()}건`} icon={<Banknote className="text-emerald-600" />} color="bg-emerald-50" />
-        <StatCard title="미정산 상태 (청구완료)" value={stats.unsettled.amount.toLocaleString()} unit="원" subText={`정산 대기 ${stats.unsettled.count.toLocaleString()}건`} icon={<Clock className="text-rose-600" />} color="bg-rose-50" />
+        <StatCard 
+          title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 접수건 (${planInfo.name})`} 
+          value={activeData.receipts.toLocaleString()} 
+          unit={planInfo.id === 'enterprise' ? '건' : ` / ${planInfo.freeLimit} 건`} 
+          subText={usageSubText}
+          icon={<Package className={isOverLimit ? "text-rose-600" : "text-blue-600"} />} 
+          color={isOverLimit ? "bg-rose-50 border border-rose-100" : "bg-blue-50"} 
+          valueColor={isOverLimit ? "text-rose-600" : "text-gray-900"}
+        />
+        
+        <StatCard 
+          title={`${monthToggle === 'this' ? '이번 달' : '지난 달'} 청구 현황`} 
+          value={activeData.amount.toLocaleString()} 
+          unit="원" 
+          subText={`청구 완료 ${activeData.claims.toLocaleString()}건`} 
+          icon={<FileText className="text-indigo-600" />} 
+          color="bg-indigo-50" 
+        />
+        
+        <StatCard 
+          title="누적 청구 금액" 
+          value={stats.cumulative.amount.toLocaleString()} 
+          unit="원" 
+          subText={`총 누적 접수 ${stats.cumulative.claims.toLocaleString()}건`} 
+          icon={<Banknote className="text-emerald-600" />} 
+          color="bg-emerald-50" 
+        />
+        
+        <StatCard 
+          title="미정산 상태 (청구완료)" 
+          value={stats.unsettled.amount.toLocaleString()} 
+          unit="원" 
+          subText={`정산 대기 ${stats.unsettled.count.toLocaleString()}건`} 
+          icon={<Clock className="text-rose-600" />} 
+          color="bg-rose-50" 
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
@@ -291,7 +392,6 @@ export default function Dashboard() {
                         <Package size={18} className="md:w-5 md:h-5 group-hover:text-indigo-600 transition-colors" />
                       </div>
                       <div>
-                        {/* 💡 대상자 이름 매핑 완료 */}
                         <p className="font-black text-sm md:text-base text-gray-900 leading-tight truncate max-w-[120px] md:max-w-[200px] group-hover:text-indigo-700 transition-colors">
                           {claim.customerName}
                         </p>
@@ -347,7 +447,7 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, unit, icon, color, subText }) {
+function StatCard({ title, value, unit, icon, color, subText, valueColor = "text-gray-900" }) {
   return (
     <div className="bg-white p-4 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/20 hover:scale-[1.02] transition-all flex flex-col justify-between relative overflow-hidden">
       <div className="flex justify-between items-start mb-3 md:mb-6">
@@ -355,7 +455,7 @@ function StatCard({ title, value, unit, icon, color, subText }) {
           <div className="scale-75 md:scale-100">{icon}</div>
         </div>
         {subText && (
-          <span className="hidden md:inline-block text-[10px] md:text-xs font-bold text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100">
+          <span className={`hidden xl:inline-block text-[10px] md:text-xs font-bold px-2.5 py-1.5 rounded-lg border ${valueColor === 'text-rose-600' ? 'text-rose-600 bg-rose-50 border-rose-100 animate-pulse' : 'text-gray-500 bg-gray-50 border-gray-100'}`}>
             {subText}
           </span>
         )}
@@ -363,11 +463,11 @@ function StatCard({ title, value, unit, icon, color, subText }) {
       <div>
         <p className="text-gray-400 text-[10px] md:text-xs font-black uppercase tracking-widest mb-0.5 md:mb-1">{title}</p>
         <div className="flex items-baseline gap-1">
-          <span className="text-xl md:text-3xl font-black text-gray-900 tracking-tighter truncate">{value}</span>
+          <span className={`text-xl md:text-3xl font-black tracking-tighter truncate ${valueColor}`}>{value}</span>
           <span className="text-[10px] md:text-sm font-bold text-gray-400 whitespace-nowrap">{unit}</span>
         </div>
         {subText && (
-          <p className="md:hidden text-[9px] font-bold text-gray-400 mt-2 truncate">
+          <p className={`xl:hidden text-[9px] font-bold mt-2 truncate break-keep leading-tight ${valueColor === 'text-rose-600' ? 'text-rose-500' : 'text-gray-400'}`}>
             {subText}
           </p>
         )}

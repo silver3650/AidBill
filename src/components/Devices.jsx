@@ -67,24 +67,35 @@ export default function Devices() {
 
   useEffect(() => { 
     fetchData(); 
+    
+    // 💡 탭으로 다시 돌아왔을 때 자동 갱신 방어벽 추가
+    const handleFocus = () => fetchData();
+    window.addEventListener('focus', handleFocus);
+    
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         fetchData();
       }
     });
+    
     return () => {
       authListener.subscription.unsubscribe();
+      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
   async function fetchData() {
     setIsLoading(true);
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
+      const { data: { session }, error: userError } = await supabase.auth.getSession();
+      const user = session?.user;
+      
       if (userError || !user) {
         setDevices([]);
         return;
       }
+      
       const { data, error } = await supabase
         .from('devices')
         .select('*')
@@ -132,7 +143,9 @@ export default function Devices() {
     }
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // 💡 사용자 인증 확인 (getSession 교체)
+      const { data: { session }, error: userError } = await supabase.auth.getSession();
+      const user = session?.user;
       if (userError || !user) {
         alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
         return;
@@ -260,6 +273,7 @@ export default function Devices() {
                   <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg tracking-widest uppercase">
                     {device.category}
                   </span>
+                  {/* 💡 공단(NHIS) 카테고리이면서 조건 충족 시에만 뱃지 표시 */}
                   {isPrescriptionRequired(device.category, device.name) && (
                     <span className="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-500 text-[9px] font-black rounded border border-rose-100 shadow-sm">처방전</span>
                   )}

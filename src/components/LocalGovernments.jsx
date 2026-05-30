@@ -4,6 +4,7 @@ import {
   Phone, User, Check, FileCheck, Mail, PlusCircle, MinusCircle
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useAutoSave } from '../hooks/useAutoSave'; // 💡 자동 저장 훅 임포트
 
 const STANDARD_DOCS = [
   { id: '교부비용청구서', label: '보조기기 교부 비용청구서' },
@@ -18,32 +19,50 @@ const STANDARD_DOCS = [
 
 export default function LocalGovernments() {
   const [govs, setGovs] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  
+  // 💡 기존 useState들을 useAutoSave로 교체하여 화면 상태 유지
+  const [isModalOpen, setIsModalOpen] = useAutoSave('govs_modal_open', false);
+  const [editingId, setEditingId] = useAutoSave('govs_editing_id', null);
+  const [searchTerm, setSearchTerm] = useAutoSave('govs_search_term', '');
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData, clearFormData] = useAutoSave('govs_form_data', {
     name: '',
     contact_person: '',
     phone: '',
     email: '',
     memo: '',
-    additional_contacts: [], // 💡 추가 담당자를 관리하는 배열
+    additional_contacts: [], 
     required_documents: ['교부비용청구서', '교부확인서', '사업자등록증', '계좌사본']
   });
 
   useEffect(() => {
     fetchData();
+
+    // 💡 탭 이동 후 복귀 시 자동 갱신 방어벽 추가 (데이터 증발 방지)
+    const handleFocus = () => fetchData();
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   async function fetchData() {
-    const { data, error } = await supabase
-      .from('local_governments')
-      .select('*')
-      .order('name', { ascending: true });
-    
-    if (error) console.error('Error fetching govs:', error);
-    else setGovs(data || []);
+    try {
+      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      const { data, error } = await supabase
+        .from('local_governments')
+        .select('*')
+        .order('name', { ascending: true });
+      
+      if (error) console.error('Error fetching govs:', error);
+      else setGovs(data || []);
+    } catch (e) {
+      console.error('FetchData Error:', e);
+    }
   }
 
   // DB 유령 데이터 필터 및 정규화
@@ -85,7 +104,7 @@ export default function LocalGovernments() {
     }));
   };
 
-  // 💡 추가 담당자 제어 함수들
+  // 추가 담당자 제어 함수들
   const addContact = () => {
     setFormData(prev => ({
       ...prev,
@@ -110,6 +129,13 @@ export default function LocalGovernments() {
 
   const handleSave = async () => {
     if (!formData.name) return alert('지자체명은 필수 입력 항목입니다.');
+
+    // 💡 안전한 세션 확인
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+      return;
+    }
 
     const payload = {
       name: formData.name,
@@ -139,6 +165,10 @@ export default function LocalGovernments() {
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`[${name}] 지자체 정보를 정말 삭제하시겠습니까?\n이 지자체에 소속된 대상자가 있을 경우 삭제되지 않을 수 있습니다.`)) return;
+
+    // 💡 안전한 세션 확인
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
 
     const { error } = await supabase.from('local_governments').delete().eq('id', id);
     
@@ -171,15 +201,7 @@ export default function LocalGovernments() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ 
-      name: '', 
-      contact_person: '', 
-      phone: '', 
-      email: '', 
-      memo: '', 
-      additional_contacts: [],
-      required_documents: ['교부비용청구서', '교부확인서', '사업자등록증', '계좌사본'] 
-    });
+    clearFormData(); // 💡 닫을 때 작성 중인 폼 임시 데이터 완벽히 초기화
   };
 
   const filteredGovs = govs
@@ -198,7 +220,7 @@ export default function LocalGovernments() {
           </p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => { clearFormData(); setIsModalOpen(true); }} // 💡 등록 버튼 누를 때도 폼 강제 초기화
           className="w-full md:w-auto bg-blue-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-blue-200 flex items-center justify-center gap-2 hover:scale-105 transition-all"
         >
           <Plus size={22} /> 지자체 등록

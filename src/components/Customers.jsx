@@ -63,11 +63,19 @@ export default function Customers() {
 
   useEffect(() => {
     fetchData();
+    
+    // 💡 탭으로 다시 돌아왔을 때 자동 갱신 방어벽 추가
+    const handleFocus = () => fetchData();
+    window.addEventListener('focus', handleFocus);
+    
     const script = document.createElement('script');
     script.src = "//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
     script.async = true;
     document.body.appendChild(script);
-    return () => { if (document.body.contains(script)) document.body.removeChild(script); };
+    return () => { 
+      if (document.body.contains(script)) document.body.removeChild(script); 
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -76,7 +84,9 @@ export default function Customers() {
 
   async function fetchData() {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
+      const { data: { session }, error: userError } = await supabase.auth.getSession();
+      const user = session?.user;
       
       if (userError || !user) {
         console.warn("인증 에러이거나 세션이 없습니다.");
@@ -275,7 +285,9 @@ export default function Customers() {
     if (!formData.name) return alert('성함은 필수입니다.');
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // 💡 사용자 인증 확인 (getSession 교체)
+      const { data: { session }, error: userError } = await supabase.auth.getSession();
+      const user = session?.user;
       if (userError || !user) {
         alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
         return;
@@ -365,7 +377,9 @@ export default function Customers() {
     }
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // 💡 사용자 인증 확인 (getSession 교체)
+      const { data: { session }, error: userError } = await supabase.auth.getSession();
+      const user = session?.user;
       if (userError || !user) {
         alert('로그인 세션이 만료되었습니다.');
         return;
