@@ -233,7 +233,8 @@ export default function Claims() {
     '보조기기 급여 지급청구서': BenefitClaimFormDoc, '보청기 구매 표준계약서': Contracts 
   };
 
-  const STATUS_STAGES = ['대기 중', '배송 중', '교부 완료', '청구 완료 (계산서 미발행)', '청구 완료 (계산서 발행)', '정산 완료'];
+  // 💡 진행 파이프라인 상태에 [발주 완료] 추가
+  const STATUS_STAGES = ['대기 중', '발주 완료', '배송 중', '교부 완료', '청구 완료 (계산서 미발행)', '청구 완료 (계산서 발행)', '정산 완료'];
 
   useEffect(() => {
     async function initialize() {
@@ -579,8 +580,10 @@ export default function Claims() {
     setIsSavingEdit(true);
     try {
       let newStatus = editData.status;
-      if (photoFiles.length > 0 && (newStatus === '대기 중' || newStatus === '배송 중')) newStatus = '교부 완료';
-      else if (editData.tracking_no && newStatus === '대기 중') newStatus = '배송 중';
+      
+      // 💡 편집 저장 시, 발주 완료 상태도 함께 판별되도록 수정
+      if (photoFiles.length > 0 && ['대기 중', '발주 완료', '배송 중'].includes(newStatus)) newStatus = '교부 완료';
+      else if (editData.tracking_no && ['대기 중', '발주 완료'].includes(newStatus)) newStatus = '배송 중';
       
       const payload = {
         claim_date: editData.claim_date, total_amount: Number(editData.total_amount) || 0,
@@ -633,6 +636,23 @@ export default function Claims() {
     }
   };
 
+  // 💡 버튼 1클릭으로 바로 발주 완료 상태로 넘기는 핸들러
+  const handleOrderComplete = async (id) => {
+    if (window.confirm('외부 발주 처리를 완료하셨습니까?\n해당 건의 상태를 [발주 완료]로 즉시 변경합니다.')) {
+      try {
+        const { error } = await supabase.from('claims').update({ status: '발주 완료' }).eq('id', id);
+        if (error) throw error;
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
+        if (user) fetchData(user.id);
+      } catch (err) {
+        alert('상태 변경 중 오류가 발생했습니다: ' + err.message);
+      }
+    }
+  };
+
+  // 💡 1번만 남긴 정산 완료 핸들러 (중복 제거됨)
   const handleSettlementSave = async () => {
     if (!depositDate) return alert('입금일을 지정해 주세요.');
     try {
@@ -982,7 +1002,10 @@ export default function Claims() {
   const renderStatusPipeline = (claim) => {
     const currentStatus = claim.status;
     const isPhotoMissing = currentStatus === '교부 완료' && (!claim.receipt_photos || claim.receipt_photos.length === 0);
-    let currentIndex = STATUS_STAGES.indexOf(currentStatus); if (currentIndex === -1) currentIndex = 0;
+    
+    // 💡 변경: '발주 완료' 단계가 추가된 STATUS_STAGES 기준으로 렌더링
+    let currentIndex = STATUS_STAGES.indexOf(currentStatus); 
+    if (currentIndex === -1) currentIndex = 0;
     
     const formatStageText = (stage) => {
       if (!stage) return null;
@@ -994,6 +1017,7 @@ export default function Claims() {
     const getStageColor = (stage, isActive) => {
       if (!stage || !isActive) return 'bg-gray-50 text-gray-400 border-gray-200';
       if (stage === '대기 중') return 'bg-slate-100 text-slate-700 border-slate-300';
+      if (stage === '발주 완료') return 'bg-sky-50 text-sky-700 border-sky-300 shadow-sm shadow-sky-100'; // 💡 변경: 발주 완료 색상 추가
       if (stage === '배송 중') return 'bg-amber-50 text-amber-700 border-amber-300';
       if (stage === '교부 완료') return isPhotoMissing ? 'bg-rose-50 text-rose-600 border-rose-300 ring-1 ring-rose-200' : 'bg-purple-50 text-purple-700 border-purple-300';
       if (stage.includes('미발행')) return 'bg-orange-50 text-orange-700 border-orange-300 shadow-sm shadow-orange-100';
@@ -1002,7 +1026,8 @@ export default function Claims() {
       return 'bg-gray-100 text-gray-700 border-gray-300';
     };
 
-    const currentStage = STATUS_STAGES[currentIndex]; const nextStage = currentIndex < STATUS_STAGES.length - 1 ? STATUS_STAGES[currentIndex + 1] : null;
+    const currentStage = STATUS_STAGES[currentIndex]; 
+    const nextStage = currentIndex < STATUS_STAGES.length - 1 ? STATUS_STAGES[currentIndex + 1] : null;
 
     return (
       <div className="flex flex-col gap-1.5 w-full max-w-[240px] py-1">
@@ -1030,7 +1055,9 @@ export default function Claims() {
           </button>
         )}
 
-        {!isProductMissing && s === '대기 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
+        {/* 💡 변경: '대기 중'일 때는 발주 완료 버튼 표시, '발주 완료'일 때 송장 입력 버튼 표시 */}
+        {!isProductMissing && s === '대기 중' && <button onClick={() => handleOrderComplete(claim.id)} className="px-3 py-2 bg-sky-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-sky-700 flex items-center gap-1.5"><Package size={14}/> 발주 확인</button>}
+        {!isProductMissing && s === '발주 완료' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-gray-800 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-black flex items-center gap-1.5"><Truck size={14}/> 송장 입력</button>}
         {s === '배송 중' && <button onClick={() => openEditModal(claim)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-amber-600 flex items-center gap-1.5"><Camera size={14}/> 사진 등록</button>}
         {s === '교부 완료' && (
           <>
@@ -1663,6 +1690,47 @@ export default function Claims() {
                     <button onClick={handleForcePrint} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-black flex justify-center items-center gap-2 hover:bg-indigo-700 transition-colors shadow-lg"><Printer size={16}/> 실제 인쇄하기 (Ctrl+P)</button>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 💡 정산 완료(입금 확인) 모달 */}
+        {activeModal === 'settlement' && selectedClaim && (
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-md rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col">
+              <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                <div>
+                  <h4 className="text-xl md:text-2xl font-black text-gray-900 flex items-center gap-2">
+                    <CheckCircle2 className="text-emerald-500" /> 최종 정산 완료
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-1">대금 입금 일자를 확인하고 마감합니다.</p>
+                </div>
+                <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
+              </div>
+              
+              <div className="space-y-4 mb-8">
+                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                  <div className="text-sm font-bold text-emerald-800 mb-1">대상자: {selectedClaim.customers?.name}</div>
+                  <div className="text-xs text-emerald-600">청구 금액: {selectedClaim.total_amount?.toLocaleString()}원</div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">실제 입금일</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border border-gray-200 outline-none font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500 transition-all text-sm"
+                    value={depositDate}
+                    onChange={(e) => setDepositDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-auto">
+                <button onClick={() => setActiveModal(null)} className="flex-1 py-3.5 md:py-4 bg-gray-100 text-gray-600 rounded-xl md:rounded-2xl shadow-sm hover:bg-gray-200 transition-colors">취소</button>
+                <button onClick={handleSettlementSave} className="flex-[2] py-3.5 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl shadow-md hover:bg-emerald-700 flex items-center justify-center gap-2 transition-colors">
+                  <CheckCircle2 size={18} /> 정산 마감하기
+                </button>
               </div>
             </div>
           </div>
