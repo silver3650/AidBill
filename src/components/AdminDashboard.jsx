@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Building2, Receipt, Calendar, Search, 
   Download, Filter, TrendingUp, AlertCircle, 
-  Clock, CheckCircle, X, FileText, Trash2, Award, Settings, Loader2, ArrowRight
+  Clock, CheckCircle, CheckCircle2, X, FileText, Trash2, Award, Settings, Loader2, ArrowRight
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
@@ -14,8 +14,9 @@ const getPlanDetails = (planId) => {
     case 'standard': return { name: '스탠다드', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
     case 'pro': return { name: '프로', baseFee: 99000, freeLimit: 30, overageRate: 2000 };
     case 'enterprise': return { name: '엔터프라이즈', baseFee: 0, freeLimit: 999999, overageRate: 0 };
-    case 'free': return { name: '스타터(구)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
-    case 'basic': return { name: '스탠다드(구)', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
+    // 구 버전 데이터 호환
+    case 'free': return { name: '스타터(구 프리)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+    case 'basic': return { name: '스탠다드(구 베이직)', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
     default: return { name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
   }
 };
@@ -535,7 +536,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* 탭 1: 대시보드 화면 */}
+      {/* 탭 1: 대시보 화면 */}
       {activeTab === 'dashboard' ? (
         <div className="space-y-6 md:space-y-8 animate-in fade-in">
           <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-100 shadow-sm">

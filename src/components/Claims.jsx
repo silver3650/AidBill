@@ -18,7 +18,6 @@ import TransactionDoc from '../components/documents/TransactionDoc';
 import BenefitClaimFormDoc from '../components/documents/BenefitClaimFormDoc';
 import Contracts from '../components/documents/Contracts'; 
 
-// 💡 새롭게 만든 자동 저장 훅 임포트
 import { useAutoSave } from '../hooks/useAutoSave';
 
 const SignaturePad = ({ onSave }) => {
@@ -122,7 +121,6 @@ export default function Claims() {
   const itemsPerPage = 10;
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // 💡 자동 저장 훅
   const [activeModal, setActiveModal] = useAutoSave('claims_active_modal', null); 
   const [selectedClaim, setSelectedClaim] = useAutoSave('claims_selected_claim', null);
   const [claimSubject, setClaimSubject] = useAutoSave('claims_claim_subject', '기업 (업체 위탁 청구)');
@@ -156,7 +154,6 @@ export default function Claims() {
   const [isDocPreview, setIsDocPreview] = useAutoSave('claims_is_doc_preview', false); 
   const [issueDate, setIssueDate] = useAutoSave('claims_issue_date', new Date().toISOString().split('T')[0]);
 
-  // 로딩 상태나 처리 상태는 일반 useState
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false); 
 
@@ -240,17 +237,15 @@ export default function Claims() {
 
   useEffect(() => {
     async function initialize() {
-      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
       const { data: { session }, error } = await supabase.auth.getSession();
       const user = session?.user;
       
-      if (error || !user) return; // 에러가 나면 조용히 종료
+      if (error || !user) return; 
       await fetchCompanyData(user.id);
       await fetchData(user.id);
     }
     initialize();
 
-    // 💡 탭으로 다시 돌아왔을 때 데이터를 자동으로 갱신하여 텅 빈 표를 방지
     const handleFocus = () => initialize();
     window.addEventListener('focus', handleFocus);
 
@@ -421,7 +416,6 @@ export default function Claims() {
 
   const handleDelete = async (id) => {
     if (window.confirm('이 청구 내역을 영구 삭제하시겠습니까?')) {
-      // 💡 안전한 로컬 세션 확인
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       await supabase.from('claims').delete().eq('id', id);
@@ -464,7 +458,6 @@ export default function Claims() {
       alert('보청기 좌/우 중 최소 1개 이상을 선택해 주세요.'); return;
     }
 
-    // 💡 네트워크 오류 방지 getSession 사용
     const { data: { session }, error: userError } = await supabase.auth.getSession();
     const user = session?.user;
     if (userError || !user) { alert('로그인 세션이 만료되었습니다.'); return; }
@@ -617,7 +610,6 @@ export default function Claims() {
       clearEditData();   
       clearPhotoFiles(); 
       
-      // 💡 안전한 세션 갱신
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       if (user) fetchData(user.id); 
@@ -641,15 +633,23 @@ export default function Claims() {
     }
   };
 
-  const handleSettlementConfirm = async (id) => {
-    if (window.confirm('지자체가 당사 계좌로 실제 대금을 입금한 사실을 확인하셨습니까?')) {
-      const { error } = await supabase.from('claims').update({ status: '정산 완료' }).eq('id', id);
-      if (!error) {
-        alert('최종 완료로 마감되었습니다.');
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        if (user) fetchData(user.id);
-      } else { alert('오류가 발생했습니다.'); }
+  const handleSettlementSave = async () => {
+    if (!depositDate) return alert('입금일을 지정해 주세요.');
+    try {
+      const { error } = await supabase.from('claims').update({ 
+        status: '정산 완료',
+        deposit_date: depositDate
+      }).eq('id', selectedClaim.id);
+      
+      if (error) throw error;
+      
+      alert('최종 완료로 마감되었습니다.');
+      setActiveModal(null);
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (user) fetchData(user.id);
+    } catch (err) {
+      alert('오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -832,7 +832,6 @@ export default function Claims() {
     if (qual.includes('기초') || qual.includes('의료급여')) copayRate = 0;
     else if (qual.includes('경감')) copayRate = 0.05;
 
-    // 보청기 2행 처리 및 가격 보정
     let claimItems = [];
     if (claimData.item_type === 'hearing_aid') {
       adjustedStandardPrice = 1310000;
@@ -1298,6 +1297,47 @@ export default function Claims() {
           </div>
         )}
 
+        {/* 정산 완료(입금 확인) 모달 추가 */}
+        {activeModal === 'settlement' && selectedClaim && (
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-md rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col">
+              <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                <div>
+                  <h4 className="text-xl md:text-2xl font-black text-gray-900 flex items-center gap-2">
+                    <CheckCircle2 className="text-emerald-500" /> 최종 정산 완료
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-1">대금 입금 일자를 확인하고 마감합니다.</p>
+                </div>
+                <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
+              </div>
+              
+              <div className="space-y-4 mb-8">
+                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                  <div className="text-sm font-bold text-emerald-800 mb-1">대상자: {selectedClaim.customers?.name}</div>
+                  <div className="text-xs text-emerald-600">청구 금액: {selectedClaim.total_amount?.toLocaleString()}원</div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">실제 입금일</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border border-gray-200 outline-none font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500 transition-all text-sm"
+                    value={depositDate}
+                    onChange={(e) => setDepositDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-auto">
+                <button onClick={() => setActiveModal(null)} className="flex-1 py-3.5 md:py-4 bg-gray-100 text-gray-600 rounded-xl md:rounded-2xl shadow-sm hover:bg-gray-200 transition-colors">취소</button>
+                <button onClick={handleSettlementSave} className="flex-[2] py-3.5 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl shadow-md hover:bg-emerald-700 flex items-center justify-center gap-2 transition-colors">
+                  <CheckCircle2 size={18} /> 정산 마감하기
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 신규 등록 모달 */}
         {activeModal === 'create' && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
@@ -1349,7 +1389,7 @@ export default function Claims() {
                         <option value="">보청기 모델 선택...</option>
                         {allDevices.filter(d => d.category?.includes('보청기')).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                       </select>
-                      <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-xs p-2 border border-gray-200 rounded-lg text-right" value={newData.hearing_aid_details.left.price} onChange={e => handleHearingAidChange('newData', 'left', 'price', e.target.value)} /></div>
+                      <div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 font-bold shrink-0">단가</span><input type="number" disabled={!newData.hearing_aid_details.left.enabled} className="w-full text-xs p-2 bg-white border border-gray-200 rounded-lg text-right" value={newData.hearing_aid_details.left.price} onChange={e => handleHearingAidChange('newData', 'left', 'price', e.target.value)} /></div>
                     </div>
                   </div>
                 )}
@@ -1627,6 +1667,7 @@ export default function Claims() {
             </div>
           </div>
         )}
+
       </div>
 
       {/* 💡 보이지 않는 PDF 렌더링용 숨김 영역 (메일 발송 시 html2canvas 전용 영역) */}
