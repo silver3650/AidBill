@@ -120,6 +120,7 @@ export default function Claims() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
+  const [taxInvoiceDate, setTaxInvoiceDate] = useState(new Date().toISOString().split('T')[0]); // 세금계산서 날짜 상태 추가
 
   const [activeModal, setActiveModal] = useAutoSave('claims_active_modal', null); 
   const [selectedClaim, setSelectedClaim] = useAutoSave('claims_selected_claim', null);
@@ -141,7 +142,7 @@ export default function Claims() {
   
   const [editData, setEditData, clearEditData] = useAutoSave('claims_edit_data', { 
     claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
-    notes: '', purchase_date: '', mfg_date: '', 
+    notes: '', purchase_date: '', mfg_date: '', tax_invoice_date: '', deposit_date: '',
     prescription_image: '', inspection_image: '', purchase_proof_image: '', id_card_image: '',
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
   });
@@ -542,6 +543,7 @@ export default function Claims() {
       status: claim.status || '대기 중', carrier: claim.carrier || 'CJ대한통운',
       tracking_no: claim.tracking_no || '', notes: claim.notes || '',
       purchase_date: claim.purchase_date || '', mfg_date: claim.mfg_date || '',
+      tax_invoice_date: claim.tax_invoice_date || '', deposit_date: claim.deposit_date || '',
       prescription_image: claim.prescription_image || '',
       inspection_image: claim.inspection_image || '',
       purchase_proof_image: claim.purchase_proof_image || '',
@@ -612,6 +614,8 @@ export default function Claims() {
         receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
         notes: editData.notes || '', purchase_date: editData.purchase_date || null,
         mfg_date: editData.mfg_date || null,
+        tax_invoice_date: editData.tax_invoice_date || null,
+        deposit_date: editData.deposit_date || null,
         prescription_image: editData.prescription_image || null,
         inspection_image: editData.inspection_image || null,
         purchase_proof_image: editData.purchase_proof_image || null,
@@ -645,15 +649,22 @@ export default function Claims() {
     }
   };
 
-  const handleTaxInvoiceConfirm = async (id) => {
-    if (window.confirm('홈택스 등 외부 정산 허브를 통한 세금계산서 발행 처리가 완료되었습니까?')) {
-      const { error } = await supabase.from('claims').update({ status: '청구 완료 (계산서 발행)' }).eq('id', id);
-      if (!error) {
-        alert('승인되었습니다.');
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        if (user) fetchData(user.id);
-      } else { alert('DB 상태 변경 중 에러가 발생했습니다.'); }
+  const handleTaxInvoiceSave = async () => {
+    if (!taxInvoiceDate) return alert('발행일을 지정해 주세요.');
+    try {
+      const { error } = await supabase.from('claims').update({
+        status: '청구 완료 (계산서 발행)',
+        tax_invoice_date: taxInvoiceDate
+      }).eq('id', selectedClaim.id);
+      
+      if (error) throw error;
+      alert('세금계산서 발행 처리가 완료되었습니다.');
+      setActiveModal(null);
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (user) fetchData(user.id);
+    } catch (err) {
+      alert('오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -781,7 +792,6 @@ export default function Claims() {
     }
   };
 
-  // 💡 수정사항: 계약서 모달 오픈 시 데이터 파싱 오류를 원천 차단하는 안전한 함수 분리
   const openContractModal = (claim) => {
     try {
       let parsedHearing = claim?.hearing_aid_details;
@@ -1170,7 +1180,9 @@ export default function Claims() {
             <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
           </>
         )}
-        {s === '청구 완료 (계산서 미발행)' && <button onClick={() => handleTaxInvoiceConfirm(claim.id)} className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"><Send size={14}/> 세금계산서 발행 완료</button>}
+        {/* 💡 세금계산서 모달 오픈 연결 */}
+        {s === '청구 완료 (계산서 미발행)' && <button onClick={() => { setSelectedClaim(claim); setTaxInvoiceDate(new Date().toISOString().split('T')[0]); setActiveModal('tax_invoice'); }} className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"><Send size={14}/> 세금계산서 발행 완료</button>}
+        
         {s === '청구 완료 (계산서 발행)' && <button onClick={() => { setSelectedClaim(claim); setActiveModal('settlement'); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14}/> 정산 완료</button>}
         {s === '정산 완료' && <span className="px-3 py-2 text-emerald-600 text-xs font-black flex items-center gap-1.5"><CheckCircle2 size={14}/> 최종 정산완료</span>}
 
@@ -1315,6 +1327,14 @@ export default function Claims() {
                     )}
                   </div>
                   {isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (<div className="overflow-x-auto custom-scrollbar pb-1">{renderStatusPipeline(claim)}</div>)}
+                  
+                  {/* 💡 계산서 및 입금일 모바일 뱃지 표시 */}
+                  {(claim.tax_invoice_date || claim.deposit_date) && (
+                    <div className="flex gap-2 text-[10px] font-mono mt-1 pt-2 border-t border-gray-200">
+                      {claim.tax_invoice_date && <span className="text-blue-600 bg-blue-100/50 px-2 py-1 rounded font-bold">발행: {formatShortDate(claim.tax_invoice_date)}</span>}
+                      {claim.deposit_date && <span className="text-emerald-600 bg-emerald-100/50 px-2 py-1 rounded font-bold">입금: {formatShortDate(claim.deposit_date)}</span>}
+                    </div>
+                  )}
                 </div>
                 {renderActions(claim, isProductMissing, s)}
               </div>
@@ -1325,7 +1345,8 @@ export default function Claims() {
         <div className="hidden md:flex bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex-col">
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
-              <tr><th className="py-3 px-4 w-[5%] text-center">No.</th><th className="py-3 px-4 w-[10%]">접수일</th><th className="py-3 px-5 w-[15%]">대상자 / 기관</th><th className="py-3 px-5 w-[20%]">할당 품목</th><th className="py-3 px-4 text-right">청구금액</th><th className="py-3 px-4">입금일</th><th className="py-3 px-5 w-[25%]">진행 파이프라인</th><th className="py-3 px-5 text-right w-[25%]">업무 실행 (단계별 제안)</th></tr>
+              {/* 💡 헤더 명칭 변경: 계산서/입금일 */}
+              <tr><th className="py-3 px-4 w-[5%] text-center">No.</th><th className="py-3 px-4 w-[10%]">접수일</th><th className="py-3 px-5 w-[15%]">대상자 / 기관</th><th className="py-3 px-5 w-[20%]">할당 품목</th><th className="py-3 px-4 text-right">청구금액</th><th className="py-3 px-4 w-[10%]">계산서 / 입금일</th><th className="py-3 px-5 w-[25%]">진행 파이프라인</th><th className="py-3 px-5 text-right w-[20%]">업무 실행 (단계별 제안)</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
               {currentItems.map((claim, index) => {
@@ -1363,7 +1384,15 @@ export default function Claims() {
                       )}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-xs">{claim.total_amount?.toLocaleString()}</td>
-                    <td className="py-3 px-4 font-mono text-xs">{claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</td>
+                    
+                    {/* 💡 날짜 표시부 개선: 발행일과 입금일 모두 표시 */}
+                    <td className="py-3 px-4 align-middle">
+                      <div className="flex flex-col gap-1 text-xs font-mono font-bold">
+                        <span className="text-blue-600 bg-blue-50/50 px-1.5 rounded py-0.5 whitespace-nowrap" title="세금계산서 발행일">발: {claim.tax_invoice_date ? formatShortDate(claim.tax_invoice_date) : '-'}</span>
+                        <span className="text-emerald-600 bg-emerald-50/50 px-1.5 rounded py-0.5 whitespace-nowrap" title="입금일">입: {claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</span>
+                      </div>
+                    </td>
+
                     <td className="py-3 px-5 align-middle">{isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm hover:bg-rose-700 flex items-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (renderStatusPipeline(claim))}</td>
                     <td className="py-3 px-5 text-right align-middle">{renderActions(claim, isProductMissing, s)}</td>
                   </tr>
@@ -1500,13 +1529,21 @@ export default function Claims() {
                       <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">기본 정보 & 상태</div>
                       <div className="space-y-3">
                         <div><label className="text-[10px] text-gray-400 uppercase block mb-1">진행 파이프라인 (상태)</label><select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>{STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                        
                         <div className="flex flex-col md:flex-row gap-2">
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} /></div>
                         </div>
+                        
                         <div className="flex flex-col md:flex-row gap-2">
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled={editData.item_type === 'hearing_aid'} className={`w-full p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200 ${editData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50'}`} value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} /></div>
+                        </div>
+
+                        {/* 💡 세금계산서 및 입금일 종합 편집 영역 추가 */}
+                        <div className="flex flex-col md:flex-row gap-2 pt-2 border-t border-dashed border-gray-200 mt-2">
+                          <div className="flex-1"><label className="text-[10px] text-blue-500 uppercase block mb-1">세금계산서 발행일</label><input type="date" className="w-full bg-blue-50/30 p-3 rounded-xl text-sm font-bold border border-blue-100 focus:border-blue-300 outline-none" value={editData.tax_invoice_date} onChange={e => setEditData({...editData, tax_invoice_date: e.target.value})} /></div>
+                          <div className="flex-1"><label className="text-[10px] text-emerald-500 uppercase block mb-1">입금 확인일</label><input type="date" className="w-full bg-emerald-50/30 p-3 rounded-xl text-sm font-bold border border-emerald-100 focus:border-emerald-300 outline-none" value={editData.deposit_date} onChange={e => setEditData({...editData, deposit_date: e.target.value})} /></div>
                         </div>
                       </div>
                     </div>
@@ -1752,6 +1789,47 @@ export default function Claims() {
                     } catch (err) { alert('PDF 저장 중 오류가 발생했습니다.'); }
                   }} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-black flex justify-center items-center gap-2 hover:bg-indigo-700 shadow-md">
                   <Printer size={18}/> 계약서 PDF 저장 / 인쇄
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 💡 세금계산서 발행 모달 */}
+        {activeModal === 'tax_invoice' && selectedClaim && (
+          <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
+            <div className="bg-white w-full max-w-md rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col">
+              <div className="flex justify-between items-center mb-6 flex-shrink-0">
+                <div>
+                  <h4 className="text-xl md:text-2xl font-black text-gray-900 flex items-center gap-2">
+                    <Send className="text-amber-500" /> 계산서 발행 완료
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-1">홈택스 발행 일자를 지정하고 상태를 변경합니다.</p>
+                </div>
+                <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
+              </div>
+              
+              <div className="space-y-4 mb-8">
+                <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                  <div className="text-sm font-bold text-amber-800 mb-1">대상자: {selectedClaim?.customers?.name}</div>
+                  <div className="text-xs text-amber-600">청구 금액: {selectedClaim?.total_amount?.toLocaleString()}원</div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs md:text-sm font-extrabold text-gray-800 ml-1">계산서 실제 발행일</label>
+                  <input 
+                    type="date" 
+                    className="w-full bg-gray-50 p-3.5 md:p-4 rounded-xl md:rounded-2xl border border-gray-200 outline-none font-bold text-gray-800 focus:ring-2 focus:ring-amber-500 transition-all text-sm"
+                    value={taxInvoiceDate}
+                    onChange={(e) => setTaxInvoiceDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-auto">
+                <button onClick={() => setActiveModal(null)} className="flex-1 py-3.5 md:py-4 bg-gray-100 text-gray-600 rounded-xl md:rounded-2xl shadow-sm hover:bg-gray-200 transition-colors">취소</button>
+                <button onClick={handleTaxInvoiceSave} className="flex-[2] py-3.5 md:py-4 bg-amber-600 text-white rounded-xl md:rounded-2xl shadow-md hover:bg-amber-700 flex items-center justify-center gap-2 transition-colors">
+                  <CheckCircle2 size={18} /> 발행 마감하기
                 </button>
               </div>
             </div>

@@ -274,57 +274,89 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
+    // 💡 최초 접속 제어 로직: 탭/창이 완전히 새로 열렸을 때만 로그인창 강제 플래그 설정
+    const isFreshAccess = !sessionStorage.getItem('tab_initialized');
+    if (isFreshAccess) {
+      sessionStorage.setItem('tab_initialized', 'true');
+      sessionStorage.setItem('forceLoginWindow', 'true');
+    }
+
     // 💡 초기 인증 (무조건 서버에서 getUser로 토큰을 갱신 및 검증)
     const initializeAuth = async () => {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        
-        if (error || !user) {
-          setSession(null);
+        // 최초 접속 플래그가 켜져 있으면 자동 세션 빌드를 건너뛰고 무조건 로그인창으로 유도
+        if (sessionStorage.getItem('forceLoginWindow') === 'true') {
+          if (isMounted) setSession(null);
         } else {
-          const { data: { session: validSession } } = await supabase.auth.getSession();
-          setSession(validSession);
-          await loadUserData(user); // user 객체를 전달
+          const { data: { user }, error } = await supabase.auth.getUser();
+          
+          if (error || !user) {
+            if (isMounted) setSession(null);
+          } else {
+            const { data: { session: validSession } } = await supabase.auth.getSession();
+            if (isMounted) {
+              setSession(validSession);
+              await loadUserData(user); // user 객체를 전달
+            }
+          }
         }
       } catch (error) {
         console.error("초기 인증 설정 에러:", error);
       } finally {
-        if (isMounted) setIsCheckingAdmin(false); 
+        if (isMounted) {
+          setIsCheckingAdmin(false); 
+          // 초기 마운트 시점에 연달아 발생하는 비동기 로그인 자동 트리거를 확실히 흘려보낸 후 제거
+          setTimeout(() => {
+            sessionStorage.removeItem('forceLoginWindow');
+          }, 200);
+        }
       }
     };
 
     initializeAuth();
 
     // -------------------------------------------------------------
-    // 🚀 핵심 해결 로직 B: 가짜 SIGNED_OUT 이벤트 원천 차단
+    // 🚀 핵심 해결 로직 B: 가짜 SIGNED_OUT 이벤트 방어 및 검증
     // -------------------------------------------------------------
     const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!isMounted) return;
       if (event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        // 최초 접속 화면 구성 상태라면 자동 유도된 로그인 이벤트는 거부하고 로그인창 유지
+        if (sessionStorage.getItem('forceLoginWindow') === 'true') {
+          return;
+        }
+
         setSession(currentSession);
         if (currentSession?.user) {
           await loadUserData(currentSession.user);
         }
       } else if (event === 'SIGNED_OUT') {
-        // 사용자가 명시적으로 로그아웃한 경우에만 세션을 끊고 화면을 초기화
+        // 사용자가 명시적으로 로그아웃한 경우
         if (sessionStorage.getItem('isIntentionalLogout') === 'true') {
           setSession(null);
           setIsAdmin(false);
           setCompanyName('');
           sessionStorage.removeItem('isIntentionalLogout');
         } else {
-          // 가짜 로그아웃(탭 이동 복귀 시 등) 발생 시 무시하고 세션 유지
-          console.warn("⚠️ 브라우저 탭 절전모드 해제로 인한 가짜 로그아웃 감지됨. 세션을 강제로 유지합니다.");
+          // 가짜 로그아웃(탭 이동 복귀 시 등) 감지
+          console.warn("⚠️ 예상치 못한 SIGNED_OUT 이벤트 감지. 세션 유효성을 재확인합니다.");
           
-          // 네트워크가 안정된 후 백그라운드에서 조용히 토큰만 복구 시도
+          // 네트워크 안정화 후 진짜 세션이 만료된 것인지(토큰 만료), 아니면 단순 로딩 지연인지 검증
           setTimeout(async () => {
-            const { data } = await supabase.auth.getSession();
-            if (data.session && isMounted) {
-              setSession(data.session);
+            const { data: { session: validSession } } = await supabase.auth.getSession();
+            if (!isMounted) return;
+            
+            if (validSession) {
+              setSession(validSession); // 실제 세션이 살아있다면 복구
+            } else {
+              // 실제 세션도 날아갔다면(예: 토큰 만료) 진짜 로그아웃 처리
+              setSession(null);
+              setIsAdmin(false);
+              setCompanyName('');
             }
-          }, 3000);
+          }, 1000); // 응답성 향상을 위해 3초에서 1초로 단축
         }
       }
     });
