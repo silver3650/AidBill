@@ -26,7 +26,6 @@ export default function Customers() {
   const [selectedCustomer, setSelectedCustomer] = useAutoSave('customers_selected_customer', null);
   const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useAutoSave('customers_primary_region', '');
 
-  // 로딩, 드래그 등의 상태는 휘발성이 적합하므로 일반 useState 유지
   const [isExtracting, setIsExtracting] = useState(false); 
   const [isDragging, setIsDragging] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -38,7 +37,6 @@ export default function Customers() {
     "CU 편의점택배", "GS25 편의점택배", "직접 배송/설치", "기타"
   ];
 
-  // 💡 대상자 폼 데이터를 useAutoSave로 변경 (작성 중 데이터 및 전자서명 완벽 보존)
   const [formData, setFormData, clearFormData] = useAutoSave('customers_form_data', {
     name: '', gender: '남', birth_date: '', local_gov_id: '', nhis_branch_id: '',
     disability_type: '', disability_level: '심함', phone: '',
@@ -48,7 +46,6 @@ export default function Customers() {
     resident_number_back: ''  
   });
 
-  // 💡 교부 폼 데이터를 useAutoSave로 변경
   const [grantData, setGrantData, clearGrantData] = useAutoSave('customers_grant_data', {
     product_id: '', product_name: '', category: '', 
     carrier: 'CJ대한통운', tracking_no: '', total_amount: 0, quantity: 1, isManual: false 
@@ -58,13 +55,11 @@ export default function Customers() {
   const [isDrawing, setIsDrawing] = useState(false);
   const fileInputRef = useRef(null); 
 
-  // 지사명에서 "국민건강보험공단" 제거 함수
   const cleanBranchName = (name) => name ? name.replace(/국민건강보험공단 ?/g, '') : '';
 
   useEffect(() => {
     fetchData();
     
-    // 💡 탭으로 다시 돌아왔을 때 자동 갱신 방어벽 추가
     const handleFocus = () => fetchData();
     window.addEventListener('focus', handleFocus);
     
@@ -84,7 +79,6 @@ export default function Customers() {
 
   async function fetchData() {
     try {
-      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
       const { data: { session }, error: userError } = await supabase.auth.getSession();
       const user = session?.user;
       
@@ -122,7 +116,6 @@ export default function Customers() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // 데이터를 가나다순으로 미리 정렬
       const sortedGovs = (govData || []).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
       const sortedNhis = (nhisData || []).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
 
@@ -176,6 +169,7 @@ export default function Customers() {
     }
   }
 
+  // 🚀 안전장치(Fallback)가 추가된 완벽한 AI 분석 로직
   const processAiFile = async (file) => {
     if (!file) return; 
 
@@ -205,10 +199,29 @@ export default function Customers() {
       }
 
       const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+      let availableModels = ['gemini-1.5-flash']; 
+
+      try {
+        const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+        const listData = await listRes.json();
+        
+        if (listData && listData.models) {
+          const flashModels = listData.models
+            .filter(m => m.supportedGenerationMethods?.includes('generateContent') && m.name.includes('flash'))
+            .map(m => m.name.replace('models/', ''))
+            .sort((a, b) => b.localeCompare(a));
+          
+          if (flashModels.length > 0) {
+             availableModels = flashModels;
+          }
+        }
+      } catch (e) {
+        console.warn('모델 목록 자동 탐색에 실패하여 기본 모델 풀을 사용합니다.', e);
+      }
 
       const promptText = `
         첨부된 문서(복지카드, 신분증, 처방전 등) 데이터를 분석해서 대상자 정보를 추출해 줘.
-        너는 무조건 부가 설명이나 마크다운 표현을 완전히 배제하고, 오직 아래의 JSON 포맷 규칙을 따르는 '순수 JSON 문자열'만 출력해야 해. 
+        아래의 JSON 포맷 규칙을 정확히 따라서 응답해.
         {
           "name": "추출된 성명",
           "gender": "남" 또는 "여",
@@ -224,52 +237,128 @@ export default function Customers() {
         }
       `;
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          contents: [{ 
-            parts: [
-              { text: promptText }, 
-              { inline_data: { mime_type: mimeType, data: base64 } }
-            ] 
-          }] 
-        })
-      });
+      let success = false;
+      let lastError = null;
 
-      const result = await res.json();
-      
-      if (!res.ok || result.error) {
-        throw new Error(result.error?.message || `API 요청 에러 발생 (코드: ${res.status})`);
+      for (const targetModel of availableModels) {
+        try {
+          console.log(`🚀 AI 모델 분석 시도 중: ${targetModel}`);
+          
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${API_KEY}`, {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              contents: [{ 
+                parts: [
+                  { text: promptText }, 
+                  { inline_data: { mime_type: mimeType, data: base64 } }
+                ] 
+              }],
+              generationConfig: {
+                responseMimeType: "application/json"
+              }
+            })
+          });
+
+          const result = await res.json();
+          
+          if (!res.ok || result.error) {
+            throw new Error(result.error?.message || `API 요청 에러 발생 (코드: ${res.status})`);
+          }
+
+          const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!rawText) {
+            throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
+          }
+
+          const extractedData = JSON.parse(rawText);
+
+          if (extractedData.gender && !['남', '여'].includes(extractedData.gender)) {
+            extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
+          }
+          
+          const validQualifications = ['건강보험', '의료급여', '경감(건강보험)'];
+          if (!validQualifications.includes(extractedData.qualification)) {
+            extractedData.qualification = '의료급여';
+          }
+
+          // -------------------------------------------------------------
+          // 💡 핵심 개선: 주소 기반 관할 지자체/공단지사 '강력한' 매핑 알고리즘
+          // -------------------------------------------------------------
+          let autoPrimaryRegion = '';
+          let autoLocalGovId = '';
+          let autoNhisBranchId = '';
+
+          if (extractedData.address) {
+            const addrParts = extractedData.address.trim().split(/\s+/);
+            if (addrParts.length >= 2) {
+              const sido = addrParts[0]; 
+              const sigungu = addrParts[1]; 
+              const shortSido = sido.substring(0, 2); 
+              const shortSigungu = sigungu.replace(/시$|군$|구$/, ''); 
+
+              if (extractedData.qualification === '의료급여') {
+                // 1. 의료급여: 지자체명 매핑 (예: 용인시청, 기흥구청)
+                // DB에 도(道) 단위가 생략되어 저장된 경우(예: '용인시청')를 위해 시군구 키워드로 직접 탐색
+                let foundGov = govs.find(g => g.name.includes(sigungu)); 
+                if (!foundGov) foundGov = govs.find(g => g.name.includes(shortSigungu)); 
+                
+                // 시군구로 못찾았을 경우, 구/동 단위(3번째 주소)까지 확장 탐색 (예: 분당구)
+                if (!foundGov && addrParts.length >= 3) {
+                  const gu = addrParts[2].replace(/시$|군$|구$/, '');
+                  foundGov = govs.find(g => g.name.includes(addrParts[2]) || g.name.includes(gu));
+                }
+
+                if (foundGov) {
+                  autoPrimaryRegion = foundGov.name.split(' ')[0]; // 그룹화 기준 키 추출 (예: '용인시청' -> '용인시청')
+                  autoLocalGovId = foundGov.id.toString();
+                }
+              } else {
+                // 2. 건강보험: 공단지사명 매핑
+                let foundNhis = nhisBranches.find(b => b.name.includes(sigungu) || (b.region || '').includes(sigungu));
+                if (!foundNhis) foundNhis = nhisBranches.find(b => b.name.includes(shortSigungu) || (b.region || '').includes(shortSigungu));
+                
+                if (foundNhis) {
+                  autoPrimaryRegion = (foundNhis.region || '').split(' ')[0];
+                  autoNhisBranchId = foundNhis.id.toString();
+                } else {
+                   const fallbackNhis = nhisBranches.find(b => (b.region || '').includes(shortSido));
+                   if (fallbackNhis) autoPrimaryRegion = (fallbackNhis.region || '').split(' ')[0];
+                }
+              }
+            }
+          }
+
+          // 화면의 셀렉트박스 상태 동기화 업데이트
+          if (autoPrimaryRegion) {
+            setSelectedPrimaryRegion(autoPrimaryRegion);
+          }
+
+          // 폼 데이터 일괄 적용
+          setFormData(prev => ({ 
+            ...prev, 
+            ...extractedData,
+            local_gov_id: autoLocalGovId || prev.local_gov_id,
+            nhis_branch_id: autoNhisBranchId || prev.nhis_branch_id
+          }));
+          // -------------------------------------------------------------
+
+          alert('✅ AI 스마트 입력 및 지자체 자동 매핑이 완료되었습니다.');
+          success = true;
+          break; 
+          
+        } catch (err) {
+          console.warn(`⚠️ [${targetModel}] 분석 실패, 다음 버전을 시도합니다:`, err.message);
+          lastError = err; 
+        }
       }
 
-      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) {
-        throw new Error("AI 모델이 응답 데이터를 반환하지 않았습니다.");
-      }
-
-      const cleanedText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-        const extractedData = JSON.parse(jsonMatch[0]);
-        if (extractedData.gender && !['남', '여'].includes(extractedData.gender)) {
-          extractedData.gender = extractedData.gender.includes('여') ? '여' : '남';
-        }
-        
-        const validQualifications = ['건강보험', '의료급여', '경감(건강보험)'];
-        if (!validQualifications.includes(extractedData.qualification)) {
-          extractedData.qualification = '의료급여';
-        }
-
-        setFormData(prev => ({ ...prev, ...extractedData }));
-        alert('✅ AI 스마트 입력이 성공적으로 완료되었습니다.');
-      } else {
-        throw new Error('유효한 형태의 데이터(JSON)를 추출하지 못했습니다.');
+      if (!success) {
+        throw new Error(lastError?.message || '사용 가능한 AI 모델이 없습니다.');
       }
 
     } catch (err) { 
-      console.error("[AI 추출 프로세스 오류]:", err);
+      console.error("[AI 추출 최종 프로세스 오류]:", err);
       alert(`❌ AI 문서 분석 실패\n\n원인: ${err.message || '서버 연동 오류'}`); 
     } finally { 
       setIsExtracting(false); 
@@ -285,7 +374,6 @@ export default function Customers() {
     if (!formData.name) return alert('성함은 필수입니다.');
 
     try {
-      // 💡 사용자 인증 확인 (getSession 교체)
       const { data: { session }, error: userError } = await supabase.auth.getSession();
       const user = session?.user;
       if (userError || !user) {
@@ -365,7 +453,7 @@ export default function Customers() {
       const { error } = await supabase.from('customers').delete().eq('id', id);
       if (!error) {
         fetchData();
-        clearFormData(); // 삭제 시 폼 데이터 잔재 방지
+        clearFormData();
       }
     }
   }
@@ -377,7 +465,6 @@ export default function Customers() {
     }
 
     try {
-      // 💡 사용자 인증 확인 (getSession 교체)
       const { data: { session }, error: userError } = await supabase.auth.getSession();
       const user = session?.user;
       if (userError || !user) {
@@ -401,7 +488,7 @@ export default function Customers() {
       
       alert('✅ 교부 처리가 완료되었습니다! 청구 관리 탭에서 확인해주세요.');
       setIsGrantModalOpen(false); 
-      clearGrantData(); // 💡 완료 후 폼 초기화
+      clearGrantData(); 
       setProductSearch('');
       fetchData();
 
@@ -411,9 +498,8 @@ export default function Customers() {
     }
   }
 
-  // 신규 대상자 등록 (모달 오픈)
   const openCreateModal = () => {
-    clearFormData(); // 💡 신규 등록 시 깨끗하게 비우기
+    clearFormData();
     setSelectedPrimaryRegion(''); 
     setEditingId(null);
     setIsModalOpen(true);
@@ -464,7 +550,7 @@ export default function Customers() {
   const closeModal = () => { 
     setIsModalOpen(false); 
     setEditingId(null); 
-    clearFormData(); // 💡 닫을 때 작성 중인 폼 임시 데이터 비우기
+    clearFormData(); 
   };
 
   const getCoordinates = (e) => {
