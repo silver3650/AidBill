@@ -120,7 +120,7 @@ export default function Claims() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
-  const [taxInvoiceDate, setTaxInvoiceDate] = useState(new Date().toISOString().split('T')[0]); // 세금계산서 날짜 상태 추가
+  const [taxInvoiceDate, setTaxInvoiceDate] = useState(new Date().toISOString().split('T')[0]); 
 
   const [activeModal, setActiveModal] = useAutoSave('claims_active_modal', null); 
   const [selectedClaim, setSelectedClaim] = useAutoSave('claims_selected_claim', null);
@@ -128,6 +128,8 @@ export default function Claims() {
 
   const [custSearchTerm, setCustSearchTerm] = useAutoSave('claims_cust_search_term', '');
   const [prodSearchTerm, setProdSearchTerm] = useAutoSave('claims_prod_search_term', '');
+  
+  const [isProdDropdownOpen, setIsProdDropdownOpen] = useState(false);
 
   const [docInputs, setDocInputs] = useAutoSave('claims_doc_inputs', {
     bank: '', account_number: '', holder: '',
@@ -313,7 +315,7 @@ export default function Claims() {
       const { data: custData } = await supabase.from('customers').select('*').eq('company_id', userId).order('name');
       const { data: govData } = await supabase.from('local_governments').select('*');
       const { data: nhisData } = await supabase.from('nhis_branches').select('*');
-      const { data: deviceData } = await supabase.from('devices').select('*').order('name');
+      const { data: deviceData } = await supabase.from('devices').select('*').eq('company_id', userId).order('name');
 
       setAllCustomers(custData || []); setAllDevices(deviceData || []);
 
@@ -404,15 +406,19 @@ export default function Claims() {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, dateRange, claims, groupByCustomer]);
 
-  const cleanString = (str) => (str || '').replace(/\s+/g, '').toLowerCase();
+  const cleanString = (str) => {
+    if (str == null) return '';
+    return String(str).replace(/[\s\-\[\]\(\)\{\}\_\+\=\,\.\/\?\!\@\#\$\%\^\&\*\~]/g, '').toLowerCase();
+  };
 
   const filteredCustomersForSelect = allCustomers.filter(c => {
     const combinedText = `${c.name || ''}${c.birth_date || ''}`;
     return cleanString(combinedText).includes(cleanString(custSearchTerm));
   });
 
+  // 💡 수정됨: 상품명, 카테고리뿐만 아니라 model(모델명) 및 code(상품코드)까지 모두 검색 범위에 포함
   const filteredDevicesForSelect = allDevices.filter(d => {
-    const combinedText = `${d.category || ''}${d.name || ''}`;
+    const combinedText = `${d.category || ''} ${d.name || ''} ${d.model || ''} ${d.code || ''}`;
     return cleanString(combinedText).includes(cleanString(prodSearchTerm));
   });
 
@@ -477,7 +483,7 @@ export default function Claims() {
 
   const handleCreateSubmit = async () => {
     if (!newData.customer_id) { alert('대상자를 선택해 주세요.'); return; }
-    if (newData.item_type === 'general' && !newData.product_id) { alert('일반 상품을 선택해 주세요.'); return; }
+    if (newData.item_type === 'general' && !newData.product_id) { alert('목록에서 상품을 정확히 클릭하여 선택해 주세요.'); return; }
     if (newData.item_type === 'hearing_aid' && !newData.hearing_aid_details.right.enabled && !newData.hearing_aid_details.left.enabled) {
       alert('보청기 좌/우 중 최소 1개 이상을 선택해 주세요.'); return;
     }
@@ -517,6 +523,7 @@ export default function Claims() {
       setActiveModal(null);
       clearNewData(); 
       setCustSearchTerm(''); setProdSearchTerm('');
+      setIsProdDropdownOpen(false);
       fetchData(user.id);
     } else {
       alert('접수 실패: ' + error.message);
@@ -529,7 +536,9 @@ export default function Claims() {
       total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general',
       hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
     });
-    setCustSearchTerm(claim.customers?.name || ''); setProdSearchTerm('');
+    setCustSearchTerm(claim.customers?.name || ''); 
+    setProdSearchTerm('');
+    setIsProdDropdownOpen(false);
     setActiveModal('create');
   };
 
@@ -1180,7 +1189,6 @@ export default function Claims() {
             <button onClick={() => openEmailModal(claim)} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm hover:bg-blue-700 flex items-center gap-1.5"><Mail size={14}/> 청구 메일</button>
           </>
         )}
-        {/* 💡 세금계산서 모달 오픈 연결 */}
         {s === '청구 완료 (계산서 미발행)' && <button onClick={() => { setSelectedClaim(claim); setTaxInvoiceDate(new Date().toISOString().split('T')[0]); setActiveModal('tax_invoice'); }} className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-amber-700 flex items-center gap-1.5"><Send size={14}/> 세금계산서 발행 완료</button>}
         
         {s === '청구 완료 (계산서 발행)' && <button onClick={() => { setSelectedClaim(claim); setActiveModal('settlement'); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black shadow-md hover:bg-emerald-700 flex items-center gap-1.5"><CheckCircle2 size={14}/> 정산 완료</button>}
@@ -1198,7 +1206,6 @@ export default function Claims() {
     <>
       <style type="text/css">
         {`
-          /* 브라우저 화면(모달 등)에서는 실제 인쇄 DOM을 보이지 않게 처리 */
           @media screen {
             .print-only-container { 
               position: fixed !important; 
@@ -1212,64 +1219,14 @@ export default function Claims() {
               z-index: -9999 !important; 
             }
           }
-
-          /* 실제 인쇄 다중 페이지 처리 설정 */
           @media print {
-            /* 브라우저 기본 여백 없애기 */
-            @page {
-              size: A4 portrait;
-              margin: 0 !important;
-            }
-
-            /* 전체 레이아웃 초기화 */
-            html, body { 
-              width: 100% !important;
-              height: auto !important;
-              min-height: auto !important;
-              margin: 0 !important; 
-              padding: 0 !important; 
-              background: white !important; 
-            }
-            
-            /* 핵심: 앱의 모든 UI 요소(root 및 기타)를 감춥니다. */
-            body * { 
-              visibility: hidden; 
-            }
-            
-            /* 포탈로 body에 붙은 실제 인쇄용 DOM과 그 자식들만 다시 보이게 덮어씁니다. */
-            .print-only-container, .print-only-container * {
-              visibility: visible;
-            }
-
-            .print-only-container {
-              position: absolute !important; 
-              top: 0 !important;
-              left: 0 !important;
-              width: 210mm !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-            }
-
-            /* 각 페이지가 A4 영역을 완전히 차지하게 강제 */
-            .print-page-break { 
-              page-break-after: always !important; 
-              break-after: page !important;
-              page-break-inside: avoid !important; 
-              break-inside: avoid !important;
-              width: 210mm !important; 
-              height: 297mm !important; 
-              max-height: 297mm !important;
-              margin: 0 auto !important; 
-              padding: 0 !important; 
-              box-sizing: border-box !important; 
-              overflow: hidden !important; 
-              background: white !important; 
-            }
-            
-            .print-page-break:last-child { 
-              page-break-after: auto !important; 
-              break-after: auto !important; 
-            }
+            @page { size: A4 portrait; margin: 0 !important; }
+            html, body { width: 100% !important; height: auto !important; min-height: auto !important; margin: 0 !important; padding: 0 !important; background: white !important; }
+            body * { visibility: hidden; }
+            .print-only-container, .print-only-container * { visibility: visible; }
+            .print-only-container { position: absolute !important; top: 0 !important; left: 0 !important; width: 210mm !important; margin: 0 auto !important; padding: 0 !important; }
+            .print-page-break { page-break-after: always !important; break-after: page !important; page-break-inside: avoid !important; break-inside: avoid !important; width: 210mm !important; height: 297mm !important; max-height: 297mm !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; overflow: hidden !important; background: white !important; }
+            .print-page-break:last-child { page-break-after: auto !important; break-after: auto !important; }
           }
         `}
       </style>
@@ -1328,7 +1285,6 @@ export default function Claims() {
                   </div>
                   {isProductMissing ? (<button onClick={() => openProductAssignmentModal(claim)} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1 animate-pulse"><Plus size={12}/> 상품할당 바로가기</button>) : (<div className="overflow-x-auto custom-scrollbar pb-1">{renderStatusPipeline(claim)}</div>)}
                   
-                  {/* 💡 계산서 및 입금일 모바일 뱃지 표시 */}
                   {(claim.tax_invoice_date || claim.deposit_date) && (
                     <div className="flex gap-2 text-[10px] font-mono mt-1 pt-2 border-t border-gray-200">
                       {claim.tax_invoice_date && <span className="text-blue-600 bg-blue-100/50 px-2 py-1 rounded font-bold">발행: {formatShortDate(claim.tax_invoice_date)}</span>}
@@ -1345,7 +1301,6 @@ export default function Claims() {
         <div className="hidden md:flex bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex-col">
           <table className="w-full text-left border-collapse">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-black text-gray-500 uppercase tracking-wider">
-              {/* 💡 헤더 명칭 변경: 계산서/입금일 */}
               <tr><th className="py-3 px-4 w-[5%] text-center">No.</th><th className="py-3 px-4 w-[10%]">접수일</th><th className="py-3 px-5 w-[15%]">대상자 / 기관</th><th className="py-3 px-5 w-[20%]">할당 품목</th><th className="py-3 px-4 text-right">청구금액</th><th className="py-3 px-4 w-[10%]">계산서 / 입금일</th><th className="py-3 px-5 w-[25%]">진행 파이프라인</th><th className="py-3 px-5 text-right w-[20%]">업무 실행 (단계별 제안)</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
@@ -1385,11 +1340,10 @@ export default function Claims() {
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-xs">{claim.total_amount?.toLocaleString()}</td>
                     
-                    {/* 💡 날짜 표시부 개선: 발행일과 입금일 모두 표시 */}
                     <td className="py-3 px-4 align-middle">
                       <div className="flex flex-col gap-1 text-xs font-mono font-bold">
                         <span className="text-blue-600 bg-blue-50/50 px-1.5 rounded py-0.5 whitespace-nowrap" title="세금계산서 발행일">발: {claim.tax_invoice_date ? formatShortDate(claim.tax_invoice_date) : '-'}</span>
-                        <span className="text-emerald-600 bg-emerald-50/50 px-1.5 rounded py-0.5 whitespace-nowrap" title="입금일">입: {claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</span>
+                        <span className="text-emerald-600 bg-emerald-100/50 px-1.5 rounded py-0.5 whitespace-nowrap" title="입금일">입: {claim.deposit_date ? formatShortDate(claim.deposit_date) : '-'}</span>
                       </div>
                     </td>
 
@@ -1420,9 +1374,10 @@ export default function Claims() {
             <div className="bg-white w-full max-w-xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-10 shadow-2xl flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center shrink-0 mb-4">
                 <h4 className="text-xl md:text-2xl font-black">신규 대상자 상품 할당</h4>
-                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); }}><X size={24}/></button>
+                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); setIsProdDropdownOpen(false); }}><X size={24}/></button>
               </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+              
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4 pb-8">
                 <div>
                   <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">대상자 (수급자) 선택</label>
                   <input type="text" placeholder="대상자 성명/생년월일 검색..." className="w-full bg-white p-3 mb-2 rounded-xl border border-gray-200 text-xs font-bold" value={custSearchTerm} onChange={e => setCustSearchTerm(e.target.value)} />
@@ -1441,13 +1396,59 @@ export default function Claims() {
                 </div>
 
                 {newData.item_type === 'general' ? (
-                  <div>
-                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부할 상품 선택</label>
-                    <input type="text" placeholder="일반 상품 검색..." className="w-full bg-white p-3 mb-2 rounded-xl border border-gray-200 text-xs font-bold text-indigo-900" value={prodSearchTerm} onChange={e => setProdSearchTerm(e.target.value)} />
-                    <select className="w-full bg-gray-50 p-4 rounded-xl outline-none font-bold text-indigo-700 border border-gray-200" value={newData.product_id} onChange={e => { const matchedDevice = allDevices.find(d => String(d.id) === String(e.target.value)); setNewData({ ...newData, product_id: e.target.value, total_amount: matchedDevice?.price || 0 }); }}>
-                      <option value="">일반 상품 선택...</option>
-                      {filteredDevicesForSelect.map(d => <option key={d.id} value={d.id}>{d.category ? `[${d.category}]` : ''} {d.name}</option>)}
-                    </select>
+                  <div className="relative">
+                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부할 상품 검색 및 선택</label>
+                    <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input 
+                        type="text" 
+                        placeholder="상품명 입력 (특수문자, 띄어쓰기 무시 자동 검색)" 
+                        className={`w-full pl-10 pr-10 py-3.5 rounded-xl border text-sm font-bold outline-none transition-all ${isProdDropdownOpen ? 'bg-white border-indigo-400 ring-4 ring-indigo-50/50' : 'bg-gray-50 border-gray-200 focus:bg-white focus:border-indigo-400'} text-indigo-900`}
+                        value={prodSearchTerm} 
+                        onChange={e => {
+                          setProdSearchTerm(e.target.value);
+                          setIsProdDropdownOpen(true);
+                          if (newData.product_id) setNewData({ ...newData, product_id: '', total_amount: 0 }); 
+                        }} 
+                        onFocus={() => setIsProdDropdownOpen(true)}
+                        onBlur={() => setIsProdDropdownOpen(false)}
+                      />
+                      {newData.product_id && (
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500">
+                          <CheckCircle2 size={18} />
+                        </div>
+                      )}
+                    </div>
+                    
+                    {isProdDropdownOpen && (
+                      <div className="absolute z-[200] w-full mt-1.5 bg-white border border-indigo-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar">
+                        {filteredDevicesForSelect.length > 0 ? (
+                          filteredDevicesForSelect.map(d => (
+                            <button 
+                              key={d.id} 
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault(); 
+                                const displayName = d.category ? `[${d.category}] ${d.name}` : d.name;
+                                setNewData({ ...newData, product_id: String(d.id), total_amount: d.price || 0 });
+                                setProdSearchTerm(displayName);
+                                setIsProdDropdownOpen(false);
+                              }} 
+                              className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-0 flex justify-between items-center group"
+                            >
+                              <span className="text-[13px] font-black text-gray-700 group-hover:text-indigo-900">
+                                {d.category ? <span className="text-indigo-500 mr-1">[{d.category}]</span> : ''}{d.name}
+                              </span>
+                              <span className="text-[11px] font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-md group-hover:bg-white group-hover:text-indigo-600">
+                                {d.price?.toLocaleString()}원
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-6 text-center text-sm text-gray-400 font-bold bg-gray-50/50 rounded-xl">일치하는 상품이 없습니다.</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-indigo-100 p-3 rounded-xl bg-indigo-50/30">
@@ -1480,8 +1481,8 @@ export default function Claims() {
                 </div>
               </div>
               <div className="flex gap-3 shrink-0 pt-4 border-t border-gray-100">
-                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); }} className="flex-1 py-4 bg-gray-100 rounded-2xl">취소</button>
-                <button onClick={handleCreateSubmit} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl shadow-lg">접수 완료</button>
+                <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); setIsProdDropdownOpen(false); }} className="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-600 hover:bg-gray-200 transition-colors">취소</button>
+                <button onClick={handleCreateSubmit} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-colors">접수 완료</button>
               </div>
             </div>
           </div>
@@ -1540,7 +1541,6 @@ export default function Claims() {
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled={editData.item_type === 'hearing_aid'} className={`w-full p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200 ${editData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50'}`} value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} /></div>
                         </div>
 
-                        {/* 💡 세금계산서 및 입금일 종합 편집 영역 추가 */}
                         <div className="flex flex-col md:flex-row gap-2 pt-2 border-t border-dashed border-gray-200 mt-2">
                           <div className="flex-1"><label className="text-[10px] text-blue-500 uppercase block mb-1">세금계산서 발행일</label><input type="date" className="w-full bg-blue-50/30 p-3 rounded-xl text-sm font-bold border border-blue-100 focus:border-blue-300 outline-none" value={editData.tax_invoice_date} onChange={e => setEditData({...editData, tax_invoice_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-emerald-500 uppercase block mb-1">입금 확인일</label><input type="date" className="w-full bg-emerald-50/30 p-3 rounded-xl text-sm font-bold border border-emerald-100 focus:border-emerald-300 outline-none" value={editData.deposit_date} onChange={e => setEditData({...editData, deposit_date: e.target.value})} /></div>
