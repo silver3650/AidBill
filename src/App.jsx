@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2 
@@ -19,96 +19,10 @@ import Logo from './components/Logo';
 import AdminDashboard from './components/AdminDashboard';
 import ManualDownload from './components/ManualDownload';
 
-// -------------------------------------------------------------
-// 🚀 핵심 해결 로직 A: 사용자가 '직접' 로그아웃할 때만 반응하도록 Supabase 강제 조작 (Monkey Patch)
-// -------------------------------------------------------------
-const originalSignOut = supabase.auth.signOut.bind(supabase.auth);
-supabase.auth.signOut = async (options) => {
-  sessionStorage.setItem('isIntentionalLogout', 'true');
-  return await originalSignOut(options);
-};
-
-// -------------------------------------------------------------
-// 🚀 핵심 해결 로직 1: 사용자 30분 미활동 시에만 작동하는 '진짜' 자동 로그아웃 타이머
-// -------------------------------------------------------------
-function SessionTimeoutHandler({ children }) {
-  const TIMEOUT_DURATION = 30 * 60 * 1000; // 정확히 30분 (밀리초)
-  const lastWriteRef = useRef(0);
-
-  const handleLogout = useCallback(async () => {
-    // 중복 로그아웃 방지 플래그 (세션 스토리지 사용으로 탭 간 충돌 방지)
-    if (sessionStorage.getItem('isLoggingOut') === 'true') return;
-    sessionStorage.setItem('isLoggingOut', 'true');
-    sessionStorage.setItem('isIntentionalLogout', 'true'); // 의도적 로그아웃으로 간주
-    
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error('자동 로그아웃 에러:', e);
-    } finally {
-      // 잔여 데이터 초기화 및 로그인 페이지로 강제 리다이렉트
-      localStorage.removeItem('lastActivityTime');
-      sessionStorage.removeItem('isLoggingOut');
-      alert('30분 동안 활동이 없어 안전을 위해 자동 로그아웃되었습니다.');
-      window.location.replace('/'); 
-    }
-  }, []);
-
-  const updateActivity = useCallback(() => {
-    const now = Date.now();
-    // 브라우저 과부하 방지: 마우스를 움직일 때마다 저장하지 않고 2초에 한 번만 갱신
-    if (now - lastWriteRef.current > 2000) {
-      localStorage.setItem('lastActivityTime', now.toString());
-      lastWriteRef.current = now;
-    }
-  }, []);
-
-  const checkTimeout = useCallback(() => {
-    const lastActivityStr = localStorage.getItem('lastActivityTime');
-    if (!lastActivityStr) return;
-
-    const lastActivity = parseInt(lastActivityStr, 10);
-    // 기록된 마지막 시간과 현재 시간을 비교하여 진짜 30분이 넘었을 때만 로그아웃
-    if (Date.now() - lastActivity > TIMEOUT_DURATION) {
-      handleLogout();
-    }
-  }, [handleLogout, TIMEOUT_DURATION]);
-
-  useEffect(() => {
-    updateActivity();
-
-    const intervalId = setInterval(checkTimeout, 30000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkTimeout();
-        updateActivity(); 
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleVisibilityChange);
-
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-    events.forEach(event => document.addEventListener(event, updateActivity, { passive: true }));
-
-    return () => {
-      clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
-      events.forEach(event => document.removeEventListener(event, updateActivity));
-    };
-  }, [checkTimeout, updateActivity]);
-
-  return <>{children}</>;
-}
-// -------------------------------------------------------------
-
 // 내부 레이아웃 컴포넌트
 function MainLayout({ isAdmin, companyName }) {
   const location = useLocation();
   const currentPath = location.pathname;
-  
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   let menuItems = [
@@ -122,96 +36,46 @@ function MainLayout({ isAdmin, companyName }) {
   ];
 
   if (isAdmin) {
-    menuItems.push({ 
-      id: 'admin', 
-      path: '/admin', 
-      text: '최고 관리자', 
-      icon: <ShieldCheck size={22} className="text-rose-500" /> 
-    });
+    menuItems.push({ id: 'admin', path: '/admin', text: '최고 관리자', icon: <ShieldCheck size={22} className="text-rose-500" /> });
   }
 
   const activeMenu = menuItems.find(m => m.path === currentPath) || menuItems[0];
-
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [currentPath]);
+  useEffect(() => { setIsMobileMenuOpen(false); }, [currentPath]);
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden">
-      
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity" 
-          onClick={() => setIsMobileMenuOpen(false)} 
-        />
-      )}
-
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-gray-100 flex flex-col p-6 shadow-2xl transition-transform duration-300 ease-in-out
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:relative md:translate-x-0 md:shadow-xl md:shadow-blue-500/5
-      `}>
+      {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)} />}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-gray-100 flex flex-col p-6 shadow-2xl transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 md:shadow-xl md:shadow-blue-500/5`}>
         <div className="flex items-center justify-between mb-10 px-2">
           <Logo size={40} />
-          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors">
-            <X size={24} />
-          </button>
+          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-gray-500 hover:bg-gray-50 rounded-xl"><X size={24} /></button>
         </div>
-
         <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-2">
           {menuItems.map((item) => {
             const isActive = currentPath === item.path;
             const isAdminMenu = item.id === 'admin';
-
             return (
-              <Link
-                key={item.id}
-                to={item.path}
-                className={`w-full flex items-center justify-between px-4 py-4 rounded-[1.25rem] transition-all duration-300 group ${
-                  isActive && !isAdminMenu
-                    ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' 
-                    : isActive && isAdminMenu
-                    ? 'bg-gray-900 text-white shadow-xl shadow-gray-300'
-                    : 'text-gray-400 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <div className="flex items-center gap-4 font-bold">
-                  {item.icon}
-                  <span className={isAdminMenu && !isActive ? 'text-rose-500' : ''}>{item.text}</span>
-                </div>
+              <Link key={item.id} to={item.path} className={`w-full flex items-center justify-between px-4 py-4 rounded-[1.25rem] transition-all group ${isActive && !isAdminMenu ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : isActive && isAdminMenu ? 'bg-gray-900 text-white shadow-xl shadow-gray-300' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-900'}`}>
+                <div className="flex items-center gap-4 font-bold">{item.icon}<span className={isAdminMenu && !isActive ? 'text-rose-500' : ''}>{item.text}</span></div>
                 {isActive && <ChevronRight size={18} className="opacity-50" />}
               </Link>
             );
           })}
         </nav>
-
-        <div className="pt-6 border-t border-gray-50 mt-4 shrink-0">
-          <LogoutButton isFullWidth />
-        </div>
+        <div className="pt-6 border-t border-gray-50 mt-4 shrink-0"><LogoutButton isFullWidth /></div>
       </aside>
-
       <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
         <header className="h-16 md:h-20 shrink-0 bg-white/80 backdrop-blur-md border-b border-gray-50 flex items-center justify-between px-4 md:px-10 z-10 sticky top-0 w-full">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsMobileMenuOpen(true)} 
-              className="p-2 -ml-2 text-gray-600 md:hidden hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              <Menu size={24} />
-            </button>
-            <h2 className="text-lg md:text-xl font-black text-gray-900 tracking-tight line-clamp-1">
-              {activeMenu.text}
-            </h2>
+            <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-gray-600 md:hidden hover:bg-gray-100 rounded-xl"><Menu size={24} /></button>
+            <h2 className="text-lg md:text-xl font-black text-gray-900 tracking-tight">{activeMenu.text}</h2>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
             {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
-            <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border">
-              <Building2 size={14} className="mr-2" /> {companyName}
-            </span>
+            <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border"><Building2 size={14} className="mr-2" /> {companyName}</span>
             <ManualDownload />
           </div>
         </header>
-
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC] p-4 md:p-10 w-full">
           <div className="max-w-7xl mx-auto min-h-full pb-20">
             <Routes>
@@ -231,146 +95,53 @@ function MainLayout({ isAdmin, companyName }) {
   );
 }
 
-// 최상위 App 컴포넌트
+// 최상위 App 컴포넌트 (모든 타이머 삭제, 순수 Supabase 인증 뼈대만 남김)
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [companyName, setCompanyName] = useState(''); 
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
 
-  // 권한 및 업체명 세팅 함수
-  const loadUserData = async (user) => {
-    if (!user) {
-      setIsAdmin(false);
-      setCompanyName('');
-      return;
-    }
-    
-    try {
-      const { data: adminCheck } = await supabase
-        .from('admin_users')
-        .select('id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      setIsAdmin(!!adminCheck);
-
-      const { data: companyData } = await supabase
-        .from('company_profile')
-        .select('company_name')
-        .eq('company_id', user.id)
-        .maybeSingle();
-
-      if (companyData && companyData.company_name) {
-        setCompanyName(companyData.company_name);
-      } else {
-        setCompanyName(adminCheck ? '최고 관리자' : '미설정 업체');
-      }
-    } catch (err) {
-      console.error("데이터 바인딩 실패:", err);
-    }
-  };
-
   useEffect(() => {
     let isMounted = true;
 
-    // 💡 최초 접속 제어 로직: 탭/창이 완전히 새로 열렸을 때만 로그인창 강제 플래그 설정
-    const isFreshAccess = !sessionStorage.getItem('tab_initialized');
-    if (isFreshAccess) {
-      sessionStorage.setItem('tab_initialized', 'true');
-      sessionStorage.setItem('forceLoginWindow', 'true');
-    }
-
-    // 💡 초기 인증 (무조건 서버에서 getUser로 토큰을 갱신 및 검증)
-    const initializeAuth = async () => {
+    const loadUserData = async (user) => {
+      if (!user) { setIsAdmin(false); setCompanyName(''); return; }
       try {
-        // 최초 접속 플래그가 켜져 있으면 자동 세션 빌드를 건너뛰고 무조건 로그인창으로 유도
-        if (sessionStorage.getItem('forceLoginWindow') === 'true') {
-          if (isMounted) setSession(null);
-        } else {
-          const { data: { user }, error } = await supabase.auth.getUser();
-          
-          if (error || !user) {
-            if (isMounted) setSession(null);
-          } else {
-            const { data: { session: validSession } } = await supabase.auth.getSession();
-            if (isMounted) {
-              setSession(validSession);
-              await loadUserData(user); // user 객체를 전달
-            }
-          }
-        }
-      } catch (error) {
-        console.error("초기 인증 설정 에러:", error);
-      } finally {
-        if (isMounted) {
-          setIsCheckingAdmin(false); 
-          // 초기 마운트 시점에 연달아 발생하는 비동기 로그인 자동 트리거를 확실히 흘려보낸 후 제거
-          setTimeout(() => {
-            sessionStorage.removeItem('forceLoginWindow');
-          }, 200);
-        }
+        const { data: adminCheck } = await supabase.from('admin_users').select('id').eq('id', user.id).maybeSingle();
+        setIsAdmin(!!adminCheck);
+        const { data: companyData } = await supabase.from('company_profile').select('company_name').eq('company_id', user.id).maybeSingle();
+        setCompanyName(companyData?.company_name || (adminCheck ? '최고 관리자' : '미설정 업체'));
+      } catch (err) {
+        console.error("데이터 로드 실패:", err);
       }
     };
 
-    initializeAuth();
+    // 초기 세션 확인
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (isMounted) {
+        setSession(session);
+        if (session) loadUserData(session.user);
+        setIsCheckingAdmin(false);
+      }
+    });
 
-    // -------------------------------------------------------------
-    // 🚀 핵심 해결 로직 B: 가짜 SIGNED_OUT 이벤트 방어 및 검증
-    // -------------------------------------------------------------
-    const authListener = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      if (!isMounted) return;
-      if (event === 'INITIAL_SESSION') return;
-
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        // 최초 접속 화면 구성 상태라면 자동 유도된 로그인 이벤트는 거부하고 로그인창 유지
-        if (sessionStorage.getItem('forceLoginWindow') === 'true') {
-          return;
-        }
-
+    // 인증 상태 변화 감지 (로그인, 로그아웃 등)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (isMounted) {
         setSession(currentSession);
-        if (currentSession?.user) {
-          await loadUserData(currentSession.user);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        // 사용자가 명시적으로 로그아웃한 경우
-        if (sessionStorage.getItem('isIntentionalLogout') === 'true') {
-          setSession(null);
+        if (currentSession) {
+          loadUserData(currentSession.user);
+        } else {
           setIsAdmin(false);
           setCompanyName('');
-          sessionStorage.removeItem('isIntentionalLogout');
-        } else {
-          // 가짜 로그아웃(탭 이동 복귀 시 등) 감지
-          console.warn("⚠️ 예상치 못한 SIGNED_OUT 이벤트 감지. 세션 유효성을 재확인합니다.");
-          
-          // 네트워크 안정화 후 진짜 세션이 만료된 것인지(토큰 만료), 아니면 단순 로딩 지연인지 검증
-          setTimeout(async () => {
-            const { data: { session: validSession } } = await supabase.auth.getSession();
-            if (!isMounted) return;
-            
-            if (validSession) {
-              setSession(validSession); // 실제 세션이 살아있다면 복구
-            } else {
-              // 실제 세션도 날아갔다면(예: 토큰 만료) 진짜 로그아웃 처리
-              setSession(null);
-              setIsAdmin(false);
-              setCompanyName('');
-            }
-          }, 1000); // 응답성 향상을 위해 3초에서 1초로 단축
         }
       }
     });
 
-    const timeoutId = setTimeout(() => {
-      if (isMounted) setIsCheckingAdmin(false);
-    }, 5000);
-
     return () => {
       isMounted = false;
-      clearTimeout(timeoutId);
-      if (authListener && authListener.data && authListener.data.subscription) {
-        authListener.data.subscription.unsubscribe();
-      }
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -378,20 +149,14 @@ export default function App() {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8FAFC]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p className="text-sm font-bold text-gray-500 mt-4">보안 세션을 연결하는 중...</p>
+        <p className="text-sm font-bold text-gray-500 mt-4">보안 세션을 확인 중...</p>
       </div>
     );
   }
 
   return (
     <BrowserRouter>
-      {!session ? (
-        <AuthPage />
-      ) : (
-        <SessionTimeoutHandler>
-          <MainLayout isAdmin={isAdmin} companyName={companyName} />
-        </SessionTimeoutHandler>
-      )}
+      {!session ? <AuthPage /> : <MainLayout isAdmin={isAdmin} companyName={companyName} />}
     </BrowserRouter>
   );
 }
