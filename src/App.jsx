@@ -24,6 +24,38 @@ function MainLayout({ isAdmin, companyName }) {
   const location = useLocation();
   const currentPath = location.pathname;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // 💡 관리자용 신규 가입 대기 뱃지 상태
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+
+  // 💡 승인 대기 건수 실시간 연동 로직
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    // 현재 대기 중인 업체 수 가져오기
+    const fetchPendingApprovals = async () => {
+      const { count, error } = await supabase
+        .from('company_profile')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_approved', false);
+      
+      if (!error) setPendingApprovalCount(count || 0);
+    };
+
+    fetchPendingApprovals();
+
+    // 누군가 가입하거나 승인될 때 실시간으로 뱃지 카운트 업데이트
+    const subscription = supabase
+      .channel('admin-approval-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => {
+         fetchPendingApprovals();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [isAdmin]);
 
   let menuItems = [
     { id: 'dashboard', path: '/', text: '대시보드', icon: <LayoutDashboard size={22} /> },
@@ -36,7 +68,14 @@ function MainLayout({ isAdmin, companyName }) {
   ];
 
   if (isAdmin) {
-    menuItems.push({ id: 'admin', path: '/admin', text: '최고 관리자', icon: <ShieldCheck size={22} className="text-rose-500" /> });
+    menuItems.push({ 
+      id: 'admin', 
+      path: '/admin', 
+      text: '최고 관리자', 
+      icon: <ShieldCheck size={22} className="text-rose-500" />,
+      // 💡 대기 건수가 0보다 클 때만 뱃지 표시
+      badge: pendingApprovalCount > 0 ? 'NEW' : null 
+    });
   }
 
   const activeMenu = menuItems.find(m => m.path === currentPath) || menuItems[0];
@@ -56,7 +95,18 @@ function MainLayout({ isAdmin, companyName }) {
             const isAdminMenu = item.id === 'admin';
             return (
               <Link key={item.id} to={item.path} className={`w-full flex items-center justify-between px-4 py-4 rounded-[1.25rem] transition-all group ${isActive && !isAdminMenu ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : isActive && isAdminMenu ? 'bg-gray-900 text-white shadow-xl shadow-gray-300' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-900'}`}>
-                <div className="flex items-center gap-4 font-bold">{item.icon}<span className={isAdminMenu && !isActive ? 'text-rose-500' : ''}>{item.text}</span></div>
+                <div className="flex items-center gap-4 font-bold">
+                  {item.icon}
+                  <div className="flex items-center gap-2">
+                    <span className={isAdminMenu && !isActive ? 'text-rose-500' : ''}>{item.text}</span>
+                    {/* 💡 뱃지 UI 렌더링 */}
+                    {item.badge && (
+                      <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-md font-black shadow-sm animate-pulse tracking-wide">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 {isActive && <ChevronRight size={18} className="opacity-50" />}
               </Link>
             );
@@ -95,7 +145,7 @@ function MainLayout({ isAdmin, companyName }) {
   );
 }
 
-// 최상위 App 컴포넌트 (모든 타이머 삭제, 순수 Supabase 인증 뼈대만 남김)
+// 최상위 App 컴포넌트 (순수 Supabase 인증 뼈대)
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);

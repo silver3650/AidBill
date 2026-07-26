@@ -11,20 +11,20 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 
-// 💡 새로운 요금 정책 고정값 세팅
+// 💡 체험판 모델이 적용된 요금 정책 상세 설정
 const getPlanDetails = (planId) => {
   switch(planId) {
-    case 'starter': return { id: 'starter', name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+    case 'starter': return { id: 'starter', name: '스타터 (체험판)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
     case 'standard': return { id: 'standard', name: '스탠다드', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
     case 'pro': return { id: 'pro', name: '프로', baseFee: 99000, freeLimit: 30, overageRate: 2000 };
     case 'enterprise': return { id: 'enterprise', name: '엔터프라이즈', baseFee: 0, freeLimit: 999999, overageRate: 0 };
     case 'free': return { id: 'starter', name: '스타터(구)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
     case 'basic': return { id: 'standard', name: '스탠다드(구)', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
-    default: return { id: 'starter', name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
+    default: return { id: 'starter', name: '스타터 (체험판)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
   }
 };
 
-// 💡 플랜 동기화 핵심 로직 (업그레이드/다운그레이드/첫달무료 완벽 제어)
+// 💡 체험판 만료 여부를 계산하는 핵심 로직
 const resolveActivePlan = (compData) => {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -32,24 +32,19 @@ const resolveActivePlan = (compData) => {
   let currentPlan = compData.subscription_plan || 'starter';
   let pendingPlan = compData.pending_plan || null;
 
-  // 1. 다운그레이드 예약 일자가 지났다면 예약된 플랜을 현재 플랜으로 강제 적용
   if (pendingPlan && compData.next_plan_apply_date && todayStr >= compData.next_plan_apply_date) {
     currentPlan = pendingPlan;
     pendingPlan = null;
   }
 
-  // 2. 구버전 데이터 호환
   currentPlan = currentPlan === 'free' ? 'starter' : (currentPlan === 'basic' ? 'standard' : currentPlan);
-
-  // 3. 가입 첫 달 무료 적용 (단, 사용자가 요금제를 '명시적으로' 변경한 이력이 있다면 첫달이라도 변경된 요금제 존중)
-  const signUpDate = compData.created_at ? new Date(compData.created_at) : today;
-  const isFirstMonth = (today.getFullYear() === signUpDate.getFullYear() && today.getMonth() === signUpDate.getMonth());
   
-  if (!compData.plan_changed_at && isFirstMonth) {
-    currentPlan = 'starter';
-  }
+  // 가입월 + 익월 말일까지 계산 (Day 0은 이전 달의 마지막 날을 의미)
+  const signUpDate = compData.created_at ? new Date(compData.created_at) : today;
+  const trialEndDate = new Date(signUpDate.getFullYear(), signUpDate.getMonth() + 2, 0); 
+  const isTrialExpired = (currentPlan === 'starter' && today > trialEndDate);
 
-  return { activePlan: currentPlan };
+  return { activePlan: currentPlan, isTrialExpired };
 };
 
 export default function Dashboard() {
@@ -72,6 +67,7 @@ export default function Dashboard() {
   const [monthToggle, setMonthToggle] = useState('this'); 
   
   const [planInfo, setPlanInfo] = useState(getPlanDetails('starter'));
+  const [isTrialExpired, setIsTrialExpired] = useState(false);
 
   const fetchDashboardData = async (user) => {
     try {
@@ -88,9 +84,9 @@ export default function Dashboard() {
       const custData = custRes.data || [];
       const compData = compRes.data || {};
 
-      // 💡 동기화 로직 적용
-      const { activePlan } = resolveActivePlan(compData);
+      const { activePlan, isTrialExpired: expiredCheck } = resolveActivePlan(compData);
       setPlanInfo(getPlanDetails(activePlan));
+      setIsTrialExpired(expiredCheck);
 
       const mergedClaims = claimsData.map(claim => {
         const matchedCust = custData.find(c => String(c.id) === String(claim.customer_id));
@@ -261,7 +257,11 @@ export default function Dashboard() {
   let usageSubText = '';
   let isOverLimit = false;
 
-  if (planInfo.id !== 'enterprise') {
+  // 💡 체험판 만료 시 강제 경고 메시지 출력
+  if (planInfo.id === 'starter' && isTrialExpired) {
+    isOverLimit = true;
+    usageSubText = '🔥 체험판 이용 기간 만료 (스탠다드 이상 업그레이드 필수)';
+  } else if (planInfo.id !== 'enterprise') {
     const overage = Math.max(0, activeData.receipts - planInfo.freeLimit);
     if (overage > 0) {
       isOverLimit = true;

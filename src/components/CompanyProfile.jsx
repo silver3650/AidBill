@@ -11,15 +11,15 @@ const DOC_TYPES = [
   '의지·보조기 제조·수리업 신고증'
 ];
 
-// 💡 새로운 요금 정책 적용
+// 💡 체험판 모델이 적용된 요금 정책 상세 설정
 const PLAN_DETAILS = {
-  starter: { id: 'starter', name: '스타터 (기본)', baseFee: 0, desc: '월 2건 무료 / 초과 건당 5,000원' },
+  starter: { id: 'starter', name: '스타터 (체험판)', baseFee: 0, desc: '가입월+익월 제공 (종료 시 업그레이드 필수)' },
   standard: { id: 'standard', name: '스탠다드', baseFee: 49000, desc: '월 10건 무료 / 초과 건당 3,000원' },
   pro: { id: 'pro', name: '프로', baseFee: 99000, desc: '월 30건 무료 / 초과 건당 2,000원' },
   enterprise: { id: 'enterprise', name: '엔터프라이즈', baseFee: 0, desc: '무제한 청구 및 맞춤 설정' }
 };
 
-// 💡 플랜 동기화 핵심 로직
+// 💡 체험판 만료 여부를 계산하는 핵심 로직
 const resolveActivePlan = (compData) => {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -37,18 +37,19 @@ const resolveActivePlan = (compData) => {
     pendingPlan = pendingPlan === 'free' ? 'starter' : (pendingPlan === 'basic' ? 'standard' : pendingPlan);
   }
 
+  // 가입월 + 익월 말일까지 계산 (Day 0은 이전 달의 마지막 날을 의미)
   const signUpDate = compData.created_at ? new Date(compData.created_at) : today;
-  const isFirstMonth = (today.getFullYear() === signUpDate.getFullYear() && today.getMonth() === signUpDate.getMonth());
+  const trialEndDate = new Date(signUpDate.getFullYear(), signUpDate.getMonth() + 2, 0); 
+  const isTrialExpired = (currentPlan === 'starter' && today > trialEndDate);
   
-  if (!compData.plan_changed_at && isFirstMonth) {
-    currentPlan = 'starter';
-  }
+  const trialEndDateStr = `${trialEndDate.getFullYear()}년 ${trialEndDate.getMonth() + 1}월 ${trialEndDate.getDate()}일`;
 
-  return { activePlan: currentPlan, pendingPlan };
+  return { activePlan: currentPlan, pendingPlan, isTrialExpired, trialEndDateStr };
 };
 
 export default function CompanyProfile() {
   const [isLoading, setIsLoading] = useState(false);
+  const [planStatus, setPlanStatus] = useState({ isTrialExpired: false, trialEndDateStr: '' });
   
   const [formData, setFormData] = useState({
     company_name: '', business_number: '', biz_type: '', biz_item: '',
@@ -79,10 +80,10 @@ export default function CompanyProfile() {
         const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
         
         if (data && isMounted) {
-          // 💡 동기화 로직 적용
-          const { activePlan, pendingPlan } = resolveActivePlan(data);
+          const { activePlan, pendingPlan, isTrialExpired, trialEndDateStr } = resolveActivePlan(data);
           
           setSelectedPlan(activePlan);
+          setPlanStatus({ isTrialExpired, trialEndDateStr });
           setFormData(prev => ({ 
             ...prev, 
             ...data, 
@@ -188,7 +189,6 @@ export default function CompanyProfile() {
         throw new Error('로그인 세션이 만료되었습니다. 새로고침 후 다시 시도해주세요.');
       }
 
-      // 플랜 관리는 별도 버튼으로 처리하므로 제외
       const { subscription_plan, pending_plan, plan_changed_at, ...pureData } = formData;
       const payload = { ...pureData, company_id: session.user.id };
 
@@ -202,7 +202,8 @@ export default function CompanyProfile() {
       
       const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
       if (data) {
-        const { activePlan, pendingPlan } = resolveActivePlan(data);
+        const { activePlan, pendingPlan, isTrialExpired, trialEndDateStr } = resolveActivePlan(data);
+        setPlanStatus({ isTrialExpired, trialEndDateStr });
         setFormData(prev => ({ 
           ...prev, 
           ...data, 
@@ -219,8 +220,12 @@ export default function CompanyProfile() {
     }
   }
 
-  // 💡 업체 스스로 구독 플랜 변경 핸들러
   const handlePlanChange = async (newPlanId) => {
+    // 💡 체험판 편법 유지 방지 차단 로직
+    if (newPlanId === 'starter') {
+      return alert('스타터(체험판) 플랜은 신규 가입 시에만 1회 제공되는 한시적 요금제로, 임의로 다시 돌아갈 수 없습니다.');
+    }
+
     const currentPlanId = formData.subscription_plan || 'starter';
     
     if (currentPlanId === newPlanId && !formData.pending_plan) {
@@ -261,7 +266,13 @@ export default function CompanyProfile() {
       if (error) throw error;
       alert('구독 플랜 설정이 성공적으로 변경되었습니다.');
       
-      setFormData(prev => ({ ...prev, ...updatePayload }));
+      // 플랜 변경 후 상태 리로딩 (체험판 상태 리셋 목적)
+      const { data } = await supabase.from('company_profile').select('*').eq('company_id', session.user.id).maybeSingle();
+      if (data) {
+        const { activePlan, pendingPlan, isTrialExpired, trialEndDateStr } = resolveActivePlan(data);
+        setPlanStatus({ isTrialExpired, trialEndDateStr });
+        setFormData(prev => ({ ...prev, ...data, subscription_plan: activePlan, pending_plan: pendingPlan }));
+      }
     } catch (error) {
       alert('플랜 변경 중 오류가 발생했습니다: ' + error.message);
     }
@@ -286,7 +297,6 @@ export default function CompanyProfile() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         <div className="lg:col-span-2 space-y-6 md:space-y-8">
           
-          {/* 💡 구독 플랜 관리 섹션 추가 */}
           <div className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] border border-gray-100 shadow-xl shadow-gray-200/10 space-y-5 md:space-y-6">
             <h3 className="text-lg md:text-xl font-black text-gray-900 flex items-center gap-2 mb-4 md:mb-8">
               <Award className="text-indigo-600" size={20} /> 구독 멤버십 플랜 관리
@@ -297,7 +307,7 @@ export default function CompanyProfile() {
                 <div>
                   <p className="text-xs font-bold text-gray-500 mb-1">현재 이용 중인 플랜</p>
                   <p className="text-lg font-black text-indigo-700">
-                    {PLAN_DETAILS[formData.subscription_plan]?.name || '스타터'}
+                    {PLAN_DETAILS[formData.subscription_plan]?.name || '스타터 (체험판)'}
                   </p>
                 </div>
                 {formData.pending_plan && (
@@ -307,6 +317,17 @@ export default function CompanyProfile() {
                   </div>
                 )}
               </div>
+
+              {/* 💡 스타터(체험판) 요금제 이용자 대상 안내 메시지 노출 */}
+              {formData.subscription_plan === 'starter' && (
+                <div className={`p-4 rounded-xl border text-sm font-bold flex items-start gap-2 ${planStatus.isTrialExpired ? 'bg-rose-50 border-rose-200 text-rose-700 shadow-sm' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+                  {planStatus.isTrialExpired ? (
+                    <><AlertTriangle size={18} className="shrink-0 mt-0.5 text-rose-600" /> <div><span className="text-rose-600 font-black">체험판 이용 기간이 만료되었습니다.</span><br/>정상적인 서비스 이용(데이터 입력 및 청구)을 위해 스탠다드 이상의 플랜으로 업그레이드해 주세요.</div></>
+                  ) : (
+                    <><Clock size={18} className="shrink-0 mt-0.5" /> 무료 체험판 만료 예정일: {planStatus.trialEndDateStr}</>
+                  )}
+                </div>
+              )}
 
               <div className="pt-4 border-t border-gray-200">
                 <label className="text-xs font-extrabold text-gray-800 mb-2 block">플랜 변경 (업그레이드 / 다운그레이드)</label>
@@ -329,7 +350,7 @@ export default function CompanyProfile() {
                 </div>
                 <p className="text-[11px] text-gray-500 font-bold mt-3 leading-relaxed">
                   * 더 높은 상위 플랜으로 업그레이드 시 즉시 반영되며 혜택이 늘어납니다.<br/>
-                  * 하위 플랜으로 다운그레이드 시 이번 달까지는 기존 혜택이 유지되고, 다음 달 1일부터 새로운 플랜이 적용됩니다.
+                  * 스타터(체험판) 요금제는 최초 가입 시에만 1회 적용되며 임의로 돌아갈 수 없습니다.
                 </p>
               </div>
             </div>

@@ -6,9 +6,9 @@ import {
 import { supabase } from '../supabaseClient';
 import { useAutoSave } from '../hooks/useAutoSave';
 
-// 💡 새로운 요금 정책으로 업데이트 됨
+// 💡 체험판 모델로 업데이트된 요금 정책
 const SUBSCRIPTION_PLANS = [
-  { id: 'starter', name: '스타터', price: '0원', desc: '월 2건 이하 무료 지원 (초과 시 건당 5,000원 과금). 시스템 도입 전 테스트용으로 적합한 플랜입니다.' },
+  { id: 'starter', name: '스타터 (체험판)', price: '0원', desc: '가입월 + 익월까지 제공되는 한시적 체험판입니다. 월 2건 무료 지원(초과 시 건당 5,000원)되며, 체험 종료 후에는 정식 요금제로 업그레이드해야 합니다.' },
   { id: 'standard', name: '스탠다드', price: '49,000원', desc: '월 10건 기본 제공 (초과 시 건당 3,000원 과금). 일반적인 중소규모 업체에 적합한 표준 플랜입니다.' },
   { id: 'pro', name: '프로', price: '99,000원', desc: '월 30건 기본 제공 (초과 시 건당 2,000원 과금). 매월 청구 건수가 많은 활발한 업체에 권장합니다.' },
   { id: 'enterprise', name: '엔터프라이즈', price: '별도 협의', desc: '무제한 청구 및 맞춤형 커스텀 기능 제공. 보조기기 제조사 및 전국 단위 대형 업체에 적합합니다.' }
