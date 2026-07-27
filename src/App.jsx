@@ -5,6 +5,33 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
+// --- 💡 최고관리자 업체 접속(Impersonation)을 위한 세션 가로채기 ---
+const originalGetSession = supabase.auth.getSession.bind(supabase.auth);
+const originalGetUser = supabase.auth.getUser.bind(supabase.auth);
+
+supabase.auth.getSession = async () => {
+  const res = await originalGetSession();
+  const targetId = sessionStorage.getItem('impersonatedCompanyId');
+  if (res.data?.session?.user && targetId) {
+    res.data.session.originalUser = { ...res.data.session.user }; 
+    res.data.session.user.id = targetId;
+    res.data.session.user.isImpersonating = true;
+  }
+  return res;
+};
+
+supabase.auth.getUser = async () => {
+  const res = await originalGetUser();
+  const targetId = sessionStorage.getItem('impersonatedCompanyId');
+  if (res.data?.user && targetId) {
+    res.data.originalUser = { ...res.data.user };
+    res.data.user.id = targetId;
+    res.data.user.isImpersonating = true;
+  }
+  return res;
+};
+// -----------------------------------------------------------------
+
 // 컴포넌트 임포트
 import Dashboard from './components/Dashboard';
 import LocalGovernments from './components/LocalGovernments';
@@ -25,36 +52,31 @@ function MainLayout({ isAdmin, companyName }) {
   const currentPath = location.pathname;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // 💡 관리자용 신규 가입 대기 뱃지 상태
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
-  // 💡 승인 대기 건수 실시간 연동 로직
+  const isImpersonating = !!sessionStorage.getItem('impersonatedCompanyId');
+  const exitImpersonation = () => {
+    sessionStorage.removeItem('impersonatedCompanyId');
+    window.location.href = '/admin'; 
+  };
+
   useEffect(() => {
     if (!isAdmin) return;
-
-    // 현재 대기 중인 업체 수 가져오기
     const fetchPendingApprovals = async () => {
       const { count, error } = await supabase
         .from('company_profile')
         .select('*', { count: 'exact', head: true })
         .eq('is_approved', false);
-      
       if (!error) setPendingApprovalCount(count || 0);
     };
-
     fetchPendingApprovals();
-
-    // 누군가 가입하거나 승인될 때 실시간으로 뱃지 카운트 업데이트
     const subscription = supabase
       .channel('admin-approval-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => {
          fetchPendingApprovals();
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+    return () => supabase.removeChannel(subscription);
   }, [isAdmin]);
 
   let menuItems = [
@@ -73,7 +95,6 @@ function MainLayout({ isAdmin, companyName }) {
       path: '/admin', 
       text: '최고 관리자', 
       icon: <ShieldCheck size={22} className="text-rose-500" />,
-      // 💡 대기 건수가 0보다 클 때만 뱃지 표시
       badge: pendingApprovalCount > 0 ? 'NEW' : null 
     });
   }
@@ -99,7 +120,6 @@ function MainLayout({ isAdmin, companyName }) {
                   {item.icon}
                   <div className="flex items-center gap-2">
                     <span className={isAdminMenu && !isActive ? 'text-rose-500' : ''}>{item.text}</span>
-                    {/* 💡 뱃지 UI 렌더링 */}
                     {item.badge && (
                       <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-md font-black shadow-sm animate-pulse tracking-wide">
                         {item.badge}
@@ -121,6 +141,11 @@ function MainLayout({ isAdmin, companyName }) {
             <h2 className="text-lg md:text-xl font-black text-gray-900 tracking-tight">{activeMenu.text}</h2>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
+            {isImpersonating && (
+              <button onClick={exitImpersonation} className="bg-rose-500 text-white text-[10px] md:text-xs font-black px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg hover:bg-rose-600 flex items-center gap-1 shadow-md transition-all animate-pulse mr-1">
+                <X size={14} /> 열람 모드 종료
+              </button>
+            )}
             {isAdmin && <span className="hidden md:inline-block bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest shadow-sm"><ShieldCheck size={12} className="inline mr-1" /> Super Admin</span>}
             <span className="hidden md:inline-flex items-center bg-gray-50 text-gray-600 px-4 py-2 rounded-full text-xs font-black border"><Building2 size={14} className="mr-2" /> {companyName}</span>
             <ManualDownload />
@@ -145,7 +170,6 @@ function MainLayout({ isAdmin, companyName }) {
   );
 }
 
-// 최상위 App 컴포넌트 (순수 Supabase 인증 뼈대)
 export default function App() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -155,19 +179,21 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    const loadUserData = async (user) => {
-      if (!user) { setIsAdmin(false); setCompanyName(''); return; }
+    const loadUserData = async (sessionUser) => {
+      if (!sessionUser) { setIsAdmin(false); setCompanyName(''); return; }
       try {
-        const { data: adminCheck } = await supabase.from('admin_users').select('id').eq('id', user.id).maybeSingle();
+        const realUserId = sessionUser.originalUser ? sessionUser.originalUser.id : sessionUser.id;
+        
+        const { data: adminCheck } = await supabase.from('admin_users').select('id').eq('id', realUserId).maybeSingle();
         setIsAdmin(!!adminCheck);
-        const { data: companyData } = await supabase.from('company_profile').select('company_name').eq('company_id', user.id).maybeSingle();
+        
+        const { data: companyData } = await supabase.from('company_profile').select('company_name').eq('company_id', sessionUser.id).maybeSingle();
         setCompanyName(companyData?.company_name || (adminCheck ? '최고 관리자' : '미설정 업체'));
       } catch (err) {
         console.error("데이터 로드 실패:", err);
       }
     };
 
-    // 초기 세션 확인
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (isMounted) {
         setSession(session);
@@ -176,7 +202,6 @@ export default function App() {
       }
     });
 
-    // 인증 상태 변화 감지 (로그인, 로그아웃 등)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       if (isMounted) {
         setSession(currentSession);

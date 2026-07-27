@@ -7,24 +7,29 @@ import {
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
-// 💡 새로운 요금 정책 고정값 세팅 (초과 단가 및 무료 제공량)
+// 💡 타임존 오류를 방지하는 한국 시간 기준 날짜 포맷 함수
+const getLocalDateString = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const getPlanDetails = (planId) => {
   switch(planId) {
     case 'starter': return { name: '스타터 (기본)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
     case 'standard': return { name: '스탠다드', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
     case 'pro': return { name: '프로', baseFee: 99000, freeLimit: 30, overageRate: 2000 };
     case 'enterprise': return { name: '엔터프라이즈', baseFee: 0, freeLimit: 999999, overageRate: 0 };
-    // 구 버전 데이터 호환
     case 'free': return { name: '스타터(구 프리)', baseFee: 0, freeLimit: 2, overageRate: 5000 };
     case 'basic': return { name: '스탠다드(구 베이직)', baseFee: 49000, freeLimit: 10, overageRate: 3000 };
     default: return { name: '스타터', baseFee: 0, freeLimit: 2, overageRate: 5000 };
   }
 };
 
-// 💡 플랜 동기화 핵심 로직
 const resolveActivePlan = (compData) => {
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getLocalDateString(today); // 타임존 오류 수정
   
   let currentPlan = compData.subscription_plan || 'starter';
   let pendingPlan = compData.pending_plan || null;
@@ -74,10 +79,11 @@ export default function AdminDashboard() {
   const [appSettings, setAppSettings] = useState({ id: 1, terms_of_service: '', privacy_policy: '' });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
+  // 💡 초기 기본 기간: 이번 달 1일 ~ '오늘 날짜'까지
   const today = new Date();
   const [dateRange, setDateRange] = useState({
-    start: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0],
-    end: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0]
+    start: getLocalDateString(new Date(today.getFullYear(), today.getMonth(), 1)),
+    end: getLocalDateString(today)
   });
 
   const PLAN_MAP = {
@@ -93,9 +99,15 @@ export default function AdminDashboard() {
     paid: { name: '수금완료', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
   };
 
+  const handleImpersonate = (companyId, companyName) => {
+    if (window.confirm(`[${companyName}] 업체의 화면으로 접속하시겠습니까?\n해당 업체의 데이터(청구, 대상자 등)를 관리자 권한으로 직접 확인하고 제어할 수 있습니다.`)) {
+      sessionStorage.setItem('impersonatedCompanyId', companyId);
+      window.location.href = '/';
+    }
+  };
+
   useEffect(() => {
     checkAdminAndFetchData();
-    
     const handleFocus = () => checkAdminAndFetchData();
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
@@ -107,15 +119,12 @@ export default function AdminDashboard() {
       .select('*')
       .eq('is_approved', false)
       .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setPendingCompanies(data);
-    }
+    if (!error && data) setPendingCompanies(data);
   };
 
   const fetchAppSettings = async () => {
     try {
-      const { data, error } = await supabase.from('app_settings').select('*').limit(1).maybeSingle();
+      const { data } = await supabase.from('app_settings').select('*').limit(1).maybeSingle();
       if (data) setAppSettings(data);
     } catch (err) {
       console.error("앱 설정 로드 실패:", err);
@@ -128,7 +137,9 @@ export default function AdminDashboard() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !session?.user) { navigate('/login'); return; }
 
-      const { data: adminCheck } = await supabase.from('admin_users').select('*').eq('id', session.user.id).maybeSingle();
+      const realUserId = session.originalUser ? session.originalUser.id : session.user.id;
+      const { data: adminCheck } = await supabase.from('admin_users').select('*').eq('id', realUserId).maybeSingle();
+      
       if (!adminCheck) {
         alert('최고 관리자 권한이 없습니다. 접근이 차단되었습니다.');
         navigate('/');
@@ -136,13 +147,9 @@ export default function AdminDashboard() {
       }
       setIsAdmin(true);
 
-      await Promise.all([
-        fetchPendingCompanies(),
-        fetchAppSettings()
-      ]);
+      await Promise.all([ fetchPendingCompanies(), fetchAppSettings() ]);
 
       const { data: allCompanies } = await supabase.from('company_profile').select('*').order('created_at', { ascending: false });
-      
       const { data: allClaims } = await supabase
         .from('claims')
         .select('*')
@@ -154,7 +161,6 @@ export default function AdminDashboard() {
         const claimCount = companyClaims.length;
         const totalClaimAmount = companyClaims.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0);
         
-        // 💡 동기화 로직 적용
         const { activePlan, pendingPlan, isFirstMonth } = resolveActivePlan(company);
         const planDetails = getPlanDetails(activePlan);
 
@@ -181,10 +187,8 @@ export default function AdminDashboard() {
       });
 
       calculatedData.sort((a, b) => b.claimCount - a.claimCount);
-
       setCompanies(allCompanies || []);
       setBillingData(calculatedData);
-
     } catch (error) {
       console.error('관리자 데이터 로드 에러:', error);
     } finally {
@@ -201,7 +205,6 @@ export default function AdminDashboard() {
         privacy_policy: appSettings.privacy_policy,
         updated_at: new Date().toISOString()
       });
-
       if (error) throw error;
       alert('앱 설정(약관 및 정책)이 성공적으로 저장되었습니다.\n신규 회원가입 창에 즉시 반영됩니다.');
     } catch (error) {
@@ -213,15 +216,9 @@ export default function AdminDashboard() {
 
   const handleApprove = async (companyId, companyName) => {
     if (!window.confirm(`[${companyName}] 업체를 가입 승인하시겠습니까?\n승인 즉시 해당 업체는 로그인이 가능해집니다.`)) return;
-
     try {
-      const { error } = await supabase
-        .from('company_profile') 
-        .update({ is_approved: true })
-        .eq('company_id', companyId);
-
+      const { error } = await supabase.from('company_profile').update({ is_approved: true }).eq('company_id', companyId);
       if (error) throw error;
-
       alert(`${companyName} 업체가 성공적으로 승인되었습니다!`);
       await fetchPendingCompanies(); 
       await checkAdminAndFetchData();
@@ -232,15 +229,9 @@ export default function AdminDashboard() {
 
   const handleDeleteCompany = async (companyId, companyName) => {
     if (!window.confirm(`[${companyName}] 업체의 가입 신청을 거절하고 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
-
     try {
-      const { error } = await supabase
-        .from('company_profile')
-        .delete()
-        .eq('company_id', companyId);
-
+      const { error } = await supabase.from('company_profile').delete().eq('company_id', companyId);
       if (error) throw error;
-
       alert(`${companyName} 업체의 가입 신청이 거절 및 삭제되었습니다.`);
       await fetchPendingCompanies();
       await checkAdminAndFetchData();
@@ -276,9 +267,8 @@ export default function AdminDashboard() {
           if (window.confirm(`📉 플랜 다운그레이드가 감지되었습니다.\n\n[익월 예약 정책]에 따라 당월은 기존 권한이 유지되며, 다음 달 1일에 맞춰 [${getPlanDetails(newPlan).name}] 플랜으로 자동 전환 예약됩니다. 변경하시겠습니까?`)) {
             updatePayload.pending_plan = newPlan;
             updatePayload.plan_changed_at = new Date().toISOString();
-            
             const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-            updatePayload.next_plan_apply_date = nextMonth.toISOString().split('T')[0];
+            updatePayload.next_plan_apply_date = getLocalDateString(nextMonth);
           } else return;
         }
       } else {
@@ -287,11 +277,7 @@ export default function AdminDashboard() {
         updatePayload.next_plan_apply_date = null;
       }
 
-      const { error } = await supabase
-        .from('company_profile')
-        .update(updatePayload)
-        .eq('company_id', selectedCompany.company_id);
-
+      const { error } = await supabase.from('company_profile').update(updatePayload).eq('company_id', selectedCompany.company_id);
       if (error) throw error;
       alert('업체 정산 약정 및 수금 현황 변경사항이 완벽하게 저장되었습니다.');
       closeModal();
@@ -301,22 +287,20 @@ export default function AdminDashboard() {
     }
   };
 
+  // 💡 퀵 버튼 로직 타임존 및 이번달 조건 수정
   const setQuickDate = (type) => {
     const d = new Date();
     let start, end;
     if (type === 'thisMonth') {
       start = new Date(d.getFullYear(), d.getMonth(), 1);
-      end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      end = d; // 1일부터 오늘까지
     } else if (type === 'prevMonth') {
       start = new Date(d.getFullYear(), d.getMonth() - 1, 1);
       end = new Date(d.getFullYear(), d.getMonth(), 0);
     } else if (type === 'today') {
       start = d; end = d;
     }
-    setDateRange({
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0]
-    });
+    setDateRange({ start: getLocalDateString(start), end: getLocalDateString(end) });
   };
 
   const filteredBillingData = billingData.filter(c => 
@@ -341,8 +325,7 @@ export default function AdminDashboard() {
     let csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
+    link.href = URL.createObjectURL(blob);
     link.setAttribute("download", `종합_업체_구독과금명세_${dateRange.start}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -365,10 +348,7 @@ export default function AdminDashboard() {
     setSelectedCompany(null);
   };
 
-  if (loading) {
-    return <div className="h-[80vh] flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
-  }
-
+  if (loading) return <div className="h-[80vh] flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
   if (!isAdmin) return null;
 
   return (
@@ -392,7 +372,12 @@ export default function AdminDashboard() {
                 <div className="col-span-2 flex justify-between items-start">
                   <div>
                     <p className="text-xs font-bold text-gray-400 mb-1">업체명</p>
-                    <p className="text-lg font-black text-gray-900">{selectedCompany.company_name || '미설정 업체'}</p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-lg font-black text-gray-900">{selectedCompany.company_name || '미설정 업체'}</p>
+                      <button onClick={() => handleImpersonate(selectedCompany.company_id, selectedCompany.company_name)} className="bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-lg text-xs font-black hover:bg-indigo-100 transition-colors flex items-center gap-1">
+                        <ShieldCheck size={14}/> 업체 접속
+                      </button>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-bold text-gray-400 mb-1">플랜 변경 이력</p>
@@ -518,25 +503,17 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 관리자 메뉴 탭 분리 */}
       <div className="flex gap-2 border-b border-gray-200">
-        <button 
-          onClick={() => setActiveTab('dashboard')}
-          className={`pb-4 px-4 font-black text-[15px] transition-all relative ${activeTab === 'dashboard' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
-        >
+        <button onClick={() => setActiveTab('dashboard')} className={`pb-4 px-4 font-black text-[15px] transition-all relative ${activeTab === 'dashboard' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}>
           정산 및 업체 관리
           {activeTab === 'dashboard' && <span className="absolute bottom-0 left-0 w-full h-1 bg-indigo-600 rounded-t-lg"></span>}
         </button>
-        <button 
-          onClick={() => setActiveTab('settings')}
-          className={`pb-4 px-4 font-black text-[15px] transition-all relative ${activeTab === 'settings' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
-        >
+        <button onClick={() => setActiveTab('settings')} className={`pb-4 px-4 font-black text-[15px] transition-all relative ${activeTab === 'settings' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}>
           앱 정책 및 약관 설정
           {activeTab === 'settings' && <span className="absolute bottom-0 left-0 w-full h-1 bg-indigo-600 rounded-t-lg"></span>}
         </button>
       </div>
 
-      {/* 탭 1: 대시보 화면 */}
       {activeTab === 'dashboard' ? (
         <div className="space-y-6 md:space-y-8 animate-in fade-in">
           <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-100 shadow-sm">
@@ -569,8 +546,13 @@ export default function AdminDashboard() {
                   <tbody className="divide-y divide-gray-50">
                     {pendingCompanies.map(company => (
                       <tr key={company.company_id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4 font-black text-indigo-600 cursor-pointer hover:underline underline-offset-4" onClick={() => openCompanyDetails({ ...company, displayPlan: company.subscription_plan })}>
-                          {company.company_name}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-gray-700">{company.company_name}</span>
+                            <button onClick={() => openCompanyDetails({ ...company, displayPlan: company.subscription_plan })} className="bg-slate-100 text-slate-600 hover:bg-slate-200 px-2 py-0.5 rounded text-[10px] font-black transition-colors">
+                              상세 보기
+                            </button>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 border rounded-lg text-[11px] font-black uppercase tracking-wider ${PLAN_MAP[company.subscription_plan]?.color || 'bg-gray-100 text-gray-700'}`}>
@@ -678,9 +660,16 @@ export default function AdminDashboard() {
                     <tr key={comp.company_id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-2 mb-1">
-                          <div className="font-black text-indigo-600 text-sm cursor-pointer hover:underline underline-offset-4" onClick={() => openCompanyDetails(comp)}>
+                          <div className="font-black text-indigo-600 text-sm cursor-pointer hover:underline underline-offset-4 flex items-center gap-1" onClick={() => handleImpersonate(comp.company_id, comp.company_name)} title="업체 화면으로 접속">
                             {comp.company_name || '미설정 업체'}
+                            <ArrowRight size={14} className="opacity-50" />
                           </div>
+                          <button onClick={() => openCompanyDetails(comp)} className="bg-slate-100 text-slate-600 hover:bg-slate-200 px-2 py-0.5 rounded text-[10px] font-black transition-colors" title="정산 상세 관리 모달 열기">
+                            정산 관리
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 mb-1">
                           <span className={`px-1.5 py-0.5 border rounded-md text-[9px] font-black uppercase ${PLAN_MAP[comp.displayPlan]?.color || 'bg-gray-100 text-gray-700'}`}>
                             {PLAN_MAP[comp.displayPlan]?.name.split(' ')[0]}
                           </span>
@@ -701,7 +690,6 @@ export default function AdminDashboard() {
                         <div className="text-xs text-gray-400">{comp.email || '-'}</div>
                       </td>
                       
-                      {/* 💡 실시간 사용 건수 / 한도 표시 */}
                       <td className="px-6 py-5 text-center">
                         <div className="inline-flex items-baseline gap-1 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100">
                           <span className={`font-black text-base ${comp.extraClaims > 0 ? 'text-rose-600' : 'text-indigo-600'}`}>
@@ -755,7 +743,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) : (
-        /* 탭 2: 앱 설정 관리 화면 */
         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-100 shadow-sm animate-in fade-in">
           <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>

@@ -153,12 +153,8 @@ export default function Customers() {
         };
       });
 
-      merged?.sort((a, b) => {
-        if (a.remainingDays !== b.remainingDays) {
-          return a.remainingDays - b.remainingDays; 
-        }
-        return new Date(b.created_at) - new Date(a.created_at);
-      });
+      // 💡 최근 등록일(created_at) 기준으로만 내림차순 정렬되도록 수정 완료
+      merged?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
       setCustomers(merged || []);
       setGovs(sortedGovs); 
@@ -169,7 +165,6 @@ export default function Customers() {
     }
   }
 
-  // 🚀 안전장치(Fallback)가 추가된 완벽한 AI 분석 로직
   const processAiFile = async (file) => {
     if (!file) return; 
 
@@ -282,9 +277,6 @@ export default function Customers() {
             extractedData.qualification = '의료급여';
           }
 
-          // -------------------------------------------------------------
-          // 💡 핵심 개선: 주소 기반 관할 지자체/공단지사 '강력한' 매핑 알고리즘
-          // -------------------------------------------------------------
           let autoPrimaryRegion = '';
           let autoLocalGovId = '';
           let autoNhisBranchId = '';
@@ -298,23 +290,19 @@ export default function Customers() {
               const shortSigungu = sigungu.replace(/시$|군$|구$/, ''); 
 
               if (extractedData.qualification === '의료급여') {
-                // 1. 의료급여: 지자체명 매핑 (예: 용인시청, 기흥구청)
-                // DB에 도(道) 단위가 생략되어 저장된 경우(예: '용인시청')를 위해 시군구 키워드로 직접 탐색
                 let foundGov = govs.find(g => g.name.includes(sigungu)); 
                 if (!foundGov) foundGov = govs.find(g => g.name.includes(shortSigungu)); 
                 
-                // 시군구로 못찾았을 경우, 구/동 단위(3번째 주소)까지 확장 탐색 (예: 분당구)
                 if (!foundGov && addrParts.length >= 3) {
                   const gu = addrParts[2].replace(/시$|군$|구$/, '');
                   foundGov = govs.find(g => g.name.includes(addrParts[2]) || g.name.includes(gu));
                 }
 
                 if (foundGov) {
-                  autoPrimaryRegion = foundGov.name.split(' ')[0]; // 그룹화 기준 키 추출 (예: '용인시청' -> '용인시청')
+                  autoPrimaryRegion = foundGov.name.split(' ')[0]; 
                   autoLocalGovId = foundGov.id.toString();
                 }
               } else {
-                // 2. 건강보험: 공단지사명 매핑
                 let foundNhis = nhisBranches.find(b => b.name.includes(sigungu) || (b.region || '').includes(sigungu));
                 if (!foundNhis) foundNhis = nhisBranches.find(b => b.name.includes(shortSigungu) || (b.region || '').includes(shortSigungu));
                 
@@ -329,19 +317,16 @@ export default function Customers() {
             }
           }
 
-          // 화면의 셀렉트박스 상태 동기화 업데이트
           if (autoPrimaryRegion) {
             setSelectedPrimaryRegion(autoPrimaryRegion);
           }
 
-          // 폼 데이터 일괄 적용
           setFormData(prev => ({ 
             ...prev, 
             ...extractedData,
             local_gov_id: autoLocalGovId || prev.local_gov_id,
             nhis_branch_id: autoNhisBranchId || prev.nhis_branch_id
           }));
-          // -------------------------------------------------------------
 
           alert('✅ AI 스마트 입력 및 지자체 자동 매핑이 완료되었습니다.');
           success = true;

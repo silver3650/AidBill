@@ -116,10 +116,7 @@ export default function AuthPage() {
           const { error: uploadError } = await supabase.storage.from('biz-licenses').upload(fileName, bizLicense);
           if (uploadError) throw new Error(`파일 첨부 실패: ${uploadError.message}`);
 
-          const today = new Date();
-          const nextMonthFirst = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-          const billingStartDate = `${nextMonthFirst.getFullYear()}-${String(nextMonthFirst.getMonth() + 1).padStart(2, '0')}-01`;
-
+          // 💡 불필요해진 날짜 계산 로직 삭제, 깔끔하게 기본 정보만 저장!
           const { error: dbError } = await supabase.from('company_profile').insert([{
             company_id: userId,
             company_name: companyName,
@@ -129,8 +126,7 @@ export default function AuthPage() {
             email: email,
             biz_reg_image: fileName,
             subscription_plan: subscriptionPlan, 
-            is_approved: false,
-            billing_start_date: billingStartDate
+            is_approved: false
           }]);
           
           if (dbError) throw new Error(`업체 정보 저장 실패: ${dbError.message}`);
