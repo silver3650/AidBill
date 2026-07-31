@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Package, Plus, X, Search, Image as ImageIcon, 
-  Edit3, Trash2, Upload, CheckCircle, Building2, Banknote, Clock, Info
+  Edit3, Trash2, Upload, CheckCircle, Building2, Banknote, Clock, Info,
+  FileText, CheckSquare, Square // 💡 추가된 아이콘
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { useAutoSave } from '../hooks/useAutoSave'; // 💡 자동 저장 훅 임포트
+import { useAutoSave } from '../hooks/useAutoSave'; 
+import EstimateModal from './EstimateModal';
 
 const NHIS_CATEGORY_DATA = {
   '수동휠체어': { standard_price: 480000, lifespan: 5 },
@@ -24,10 +26,8 @@ const NHIS_CATEGORY_DATA = {
 
 const NHIS_CATEGORIES = Object.keys(NHIS_CATEGORY_DATA);
 
-// 공단(NHIS) 표준 카테고리인지 확인
 const isStandardNHIS = (category) => NHIS_CATEGORIES.includes(category);
 
-// 공단 기기 중 처방전 및 검수확인서 필요 여부 판별
 const isPrescriptionRequired = (category, name) => {
   if (!isStandardNHIS(category)) return false; 
   const text = `${category || ''} ${name || ''}`.toLowerCase();
@@ -46,10 +46,14 @@ export default function Devices() {
   const [devices, setDevices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 💡 모달 상태 및 폼 데이터를 useAutoSave로 관리하여 새로고침 시에도 유지
   const [isModalOpen, setIsModalOpen] = useAutoSave('devices_modal_open', false);
   const [searchTerm, setSearchTerm] = useAutoSave('devices_search_term', '');
   const [editingId, setEditingId] = useAutoSave('devices_editing_id', null);
+
+  // 💡 견적서 다중 선택 관련 상태 추가
+  const [isEstimateMode, setIsEstimateMode] = useState(false);
+  const [selectedDevices, setSelectedDevices] = useState([]);
+  const [isEstimateModalOpen, setIsEstimateModalOpen] = useState(false);
 
   const [formData, setFormData, clearFormData] = useAutoSave('devices_form_data', {
     name: '',
@@ -68,7 +72,6 @@ export default function Devices() {
   useEffect(() => { 
     fetchData(); 
     
-    // 💡 탭으로 다시 돌아왔을 때 자동 갱신 방어벽 추가
     const handleFocus = () => fetchData();
     window.addEventListener('focus', handleFocus);
     
@@ -87,7 +90,6 @@ export default function Devices() {
   async function fetchData() {
     setIsLoading(true);
     try {
-      // 💡 서버 통신(getUser) 대신, 지연이 없는 getSession() 사용
       const { data: { session }, error: userError } = await supabase.auth.getSession();
       const user = session?.user;
       
@@ -143,7 +145,6 @@ export default function Devices() {
     }
 
     try {
-      // 💡 사용자 인증 확인 (getSession 교체)
       const { data: { session }, error: userError } = await supabase.auth.getSession();
       const user = session?.user;
       if (userError || !user) {
@@ -211,7 +212,16 @@ export default function Devices() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    clearFormData(); // 💡 닫을 때 폼 데이터 깔끔하게 초기화
+    clearFormData(); 
+  };
+
+  // 💡 다중 선택 토글 함수
+  const toggleDeviceSelection = (device) => {
+    setSelectedDevices(prev => {
+      const exists = prev.find(d => d.id === device.id);
+      if (exists) return prev.filter(d => d.id !== device.id);
+      return [...prev, device];
+    });
   };
 
   const filteredDevices = devices.filter(d => 
@@ -226,91 +236,149 @@ export default function Devices() {
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tighter">보조기기 품목</h1>
           <p className="text-gray-500 mt-2 font-medium text-sm md:text-base">청구 가능한 장애인보조기기 단가 및 카테고리를 관리합니다.</p>
         </div>
-        <button 
-          onClick={() => { clearFormData(); setIsModalOpen(true); }} // 💡 열 때 폼 데이터 초기화
-          className="w-full md:w-auto bg-indigo-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:scale-105 transition-all"
-        >
-          <Plus size={22} /> 품목 등록
-        </button>
+        
+        {/* 💡 상단 버튼 영역 (선택 모드 전환) */}
+        <div className="flex gap-2 w-full md:w-auto">
+          {isEstimateMode ? (
+            <>
+              <button 
+                onClick={() => { setIsEstimateMode(false); setSelectedDevices([]); }}
+                className="px-4 py-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl font-bold shadow-sm hover:bg-gray-50 transition-all text-sm md:text-base whitespace-nowrap"
+              >
+                취소
+              </button>
+              <button 
+                onClick={() => setIsEstimateModalOpen(true)}
+                disabled={selectedDevices.length === 0}
+                className="flex-1 md:flex-none px-6 py-3.5 bg-gray-900 text-white rounded-2xl font-black shadow-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2 text-sm md:text-base whitespace-nowrap"
+              >
+                <FileText size={18} /> {selectedDevices.length}개 견적 발행
+              </button>
+            </>
+          ) : (
+            <>
+              <button 
+                onClick={() => setIsEstimateMode(true)}
+                className="flex-1 md:flex-none px-6 py-3.5 bg-white border border-gray-200 text-gray-800 rounded-2xl font-black shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-2 text-sm md:text-base whitespace-nowrap"
+              >
+                <FileText size={18} /> 견적서 발행
+              </button>
+              <button 
+                onClick={() => { clearFormData(); setIsModalOpen(true); }}
+                className="flex-[1.5] md:flex-none w-full md:w-auto bg-indigo-600 text-white px-6 md:px-8 py-3.5 md:py-4 rounded-2xl md:rounded-[1.5rem] font-black shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 hover:scale-105 transition-all text-sm md:text-base whitespace-nowrap"
+              >
+                <Plus size={22} /> 품목 등록
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="bg-white p-2 rounded-2xl md:rounded-[2rem] border border-gray-100 shadow-sm flex items-center group focus-within:border-indigo-200 transition-all">
-        <Search className="ml-4 md:ml-6 text-gray-400 group-focus-within:text-indigo-600" size={20} />
+      <div className={`bg-white p-2 rounded-2xl md:rounded-[2rem] border shadow-sm flex items-center group transition-all ${isEstimateMode ? 'border-gray-800 ring-2 ring-gray-800' : 'border-gray-100 focus-within:border-indigo-200'}`}>
+        <Search className={`ml-4 md:ml-6 ${isEstimateMode ? 'text-gray-800' : 'text-gray-400 group-focus-within:text-indigo-600'}`} size={20} />
         <input 
-          type="text" placeholder="품목명 또는 카테고리로 검색하세요..." 
+          type="text" placeholder={isEstimateMode ? "견적서에 추가할 기기를 검색하세요..." : "품목명 또는 카테고리로 검색하세요..."} 
           className="w-full p-4 md:p-5 outline-none font-bold text-gray-900 bg-transparent text-sm md:text-base"
           value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-        {filteredDevices.map((device) => (
-          <div key={device.id} className="bg-white rounded-3xl md:rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/10 overflow-hidden group hover:border-indigo-200 transition-all flex flex-col">
-            
+        {filteredDevices.map((device) => {
+          const isSelected = selectedDevices.some(d => d.id === device.id);
+          
+          return (
             <div 
-              onClick={() => openEditModal(device)}
-              className="h-40 md:h-48 bg-gray-50 flex items-center justify-center relative overflow-hidden border-b border-gray-100 p-4 md:p-6 cursor-pointer"
+              key={device.id} 
+              className={`bg-white rounded-3xl md:rounded-[2.5rem] border shadow-xl shadow-gray-200/10 overflow-hidden group transition-all flex flex-col ${
+                isEstimateMode && isSelected 
+                  ? 'border-gray-900 ring-2 ring-gray-900 scale-[0.98]' 
+                  : isEstimateMode ? 'border-gray-200 opacity-60 hover:opacity-100 cursor-pointer' 
+                  : 'border-gray-100 hover:border-indigo-200'
+              }`}
             >
-              {device.image ? (
-                <img src={device.image} alt={device.name} className="w-full h-full object-contain mix-blend-multiply group-hover:scale-110 transition-all duration-500" />
-              ) : (
-                <ImageIcon size={40} className="text-gray-200 md:w-12 md:h-12" />
-              )}
               
-              <div className="absolute top-3 right-3 md:top-4 md:right-4 flex gap-1.5 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all">
-                <button onClick={(e) => { e.stopPropagation(); openEditModal(device); }} className="w-8 h-8 bg-white/90 border border-gray-200 md:border-transparent backdrop-blur rounded-lg flex items-center justify-center text-gray-600 hover:text-indigo-600 shadow-sm">
-                  <Edit3 size={16}/>
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); handleDelete(device.id); }} className="w-8 h-8 bg-white/90 border border-gray-200 md:border-transparent backdrop-blur rounded-lg flex items-center justify-center text-gray-600 hover:text-red-500 shadow-sm">
-                  <Trash2 size={16}/>
-                </button>
-              </div>
-            </div>
+              <div 
+                onClick={() => isEstimateMode ? toggleDeviceSelection(device) : openEditModal(device)}
+                className="h-40 md:h-48 bg-gray-50 flex items-center justify-center relative overflow-hidden border-b border-gray-100 p-4 md:p-6 cursor-pointer"
+              >
+                {/* 💡 선택 모드일 때 보여지는 체크박스 UI */}
+                {isEstimateMode && (
+                  <div className="absolute top-4 left-4 z-20 transition-all">
+                    {isSelected ? (
+                      <CheckSquare size={28} className="text-gray-900 bg-white rounded-md" />
+                    ) : (
+                      <Square size={28} className="text-gray-400 bg-white/80 rounded-md" />
+                    )}
+                  </div>
+                )}
 
-            <div className="p-5 md:p-6 flex-1 flex flex-col">
-              <div className="flex justify-between items-start mb-3 gap-2">
-                <div className="flex flex-wrap gap-1 items-center">
-                  <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg tracking-widest uppercase">
-                    {device.category}
-                  </span>
-                  {/* 💡 공단(NHIS) 카테고리이면서 조건 충족 시에만 뱃지 표시 */}
-                  {isPrescriptionRequired(device.category, device.name) && (
-                    <span className="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-500 text-[9px] font-black rounded border border-rose-100 shadow-sm">처방전</span>
-                  )}
-                  {isInspectionRequired(device.category, device.name) && (
-                    <span className="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-500 text-[9px] font-black rounded border border-blue-100 shadow-sm">검수</span>
-                  )}
-                </div>
-                <span className="text-[11px] md:text-xs font-bold text-gray-400 flex items-center gap-1 shrink-0 mt-0.5">
-                  <Clock size={12}/> {device.lifespan ? `${device.lifespan}년` : '미입력'}
-                </span>
+                {device.image ? (
+                  <img src={device.image} alt={device.name} className={`w-full h-full object-contain mix-blend-multiply transition-all duration-500 ${isEstimateMode ? '' : 'group-hover:scale-110'}`} />
+                ) : (
+                  <ImageIcon size={40} className="text-gray-200 md:w-12 md:h-12" />
+                )}
+                
+                {/* 일반 모드에서만 수정/삭제 버튼 표시 */}
+                {!isEstimateMode && (
+                  <div className="absolute top-3 right-3 md:top-4 md:right-4 flex gap-1.5 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={(e) => { e.stopPropagation(); openEditModal(device); }} className="w-8 h-8 bg-white/90 border border-gray-200 md:border-transparent backdrop-blur rounded-lg flex items-center justify-center text-gray-600 hover:text-indigo-600 shadow-sm">
+                      <Edit3 size={16}/>
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(device.id); }} className="w-8 h-8 bg-white/90 border border-gray-200 md:border-transparent backdrop-blur rounded-lg flex items-center justify-center text-gray-600 hover:text-red-500 shadow-sm">
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
+                )}
               </div>
-              
-              <h4 className="text-lg md:text-xl font-black text-gray-900 tracking-tight leading-tight mb-2 line-clamp-2">
-                {device.name}
-              </h4>
-  
-              <div className="mt-auto pt-3 md:pt-4 space-y-1">
-                <p className="text-[11px] md:text-xs font-bold text-gray-400 flex items-center gap-1.5">
-                  <Building2 size={12}/> {device.manufacturer || '제조사 미상'}
-                </p>
-                <p className="text-[11px] md:text-xs font-bold text-indigo-400 flex items-center gap-1.5 pt-1">
-                  <Info size={12}/> 기준금액 ₩ {Number(device.standard_price || 0).toLocaleString()}
-                </p>
-                <p className="text-base md:text-lg font-black text-gray-900 flex items-center gap-1.5">
-                  <Banknote size={16} className="text-indigo-600"/> 
-                  고시 ₩ {Number(device.price).toLocaleString()}
-                  
-                  <span className={`text-[9px] md:text-[10px] px-2 py-0.5 rounded-md ml-1 tracking-wider ${
-                    device.tax_type === '과세' ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-500'
-                  }`}>
-                    {device.tax_type || '영세'}
+
+              <div 
+                className="p-5 md:p-6 flex-1 flex flex-col"
+                onClick={() => isEstimateMode && toggleDeviceSelection(device)}
+              >
+                <div className="flex justify-between items-start mb-3 gap-2">
+                  <div className="flex flex-wrap gap-1 items-center">
+                    <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg tracking-widest uppercase">
+                      {device.category}
+                    </span>
+                    {isPrescriptionRequired(device.category, device.name) && (
+                      <span className="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-500 text-[9px] font-black rounded border border-rose-100 shadow-sm">처방전</span>
+                    )}
+                    {isInspectionRequired(device.category, device.name) && (
+                      <span className="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-500 text-[9px] font-black rounded border border-blue-100 shadow-sm">검수</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] md:text-xs font-bold text-gray-400 flex items-center gap-1 shrink-0 mt-0.5">
+                    <Clock size={12}/> {device.lifespan ? `${device.lifespan}년` : '미입력'}
                   </span>
-                </p>
+                </div>
+                
+                <h4 className="text-lg md:text-xl font-black text-gray-900 tracking-tight leading-tight mb-2 line-clamp-2">
+                  {device.name}
+                </h4>
+    
+                <div className="mt-auto pt-3 md:pt-4 space-y-1">
+                  <p className="text-[11px] md:text-xs font-bold text-gray-400 flex items-center gap-1.5">
+                    <Building2 size={12}/> {device.manufacturer || '제조사 미상'}
+                  </p>
+                  <p className="text-[11px] md:text-xs font-bold text-indigo-400 flex items-center gap-1.5 pt-1">
+                    <Info size={12}/> 기준금액 ₩ {Number(device.standard_price || 0).toLocaleString()}
+                  </p>
+                  <p className="text-base md:text-lg font-black text-gray-900 flex items-center gap-1.5">
+                    <Banknote size={16} className="text-indigo-600"/> 
+                    고시 ₩ {Number(device.price).toLocaleString()}
+                    
+                    <span className={`text-[9px] md:text-[10px] px-2 py-0.5 rounded-md ml-1 tracking-wider ${
+                      device.tax_type === '과세' ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-500'
+                    }`}>
+                      {device.tax_type || '영세'}
+                    </span>
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {!isLoading && filteredDevices.length === 0 && (
            <div className="col-span-full py-16 md:py-20 text-center bg-gray-50 rounded-[2rem] md:rounded-[3rem] border-2 border-dashed border-gray-200">
@@ -485,6 +553,32 @@ export default function Devices() {
           </div>
         </div>
       )}
+
+      {/* 💡 임시 모달 대신 진짜 EstimateModal을 연결합니다 */}
+      <EstimateModal 
+        isOpen={isEstimateModalOpen} 
+        onClose={() => setIsEstimateModalOpen(false)} 
+        selectedDevices={selectedDevices} 
+        companyId={devices[0]?.company_id} // 현재 접속한 업체의 ID 전달
+      />
+      {isEstimateModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white p-10 rounded-[2rem] shadow-2xl text-center">
+            <h2 className="text-2xl font-black text-gray-900 mb-4">견적서 발행 준비 완료!</h2>
+            <p className="text-gray-500 font-bold mb-6">{selectedDevices.length}개의 품목이 선택되었습니다.</p>
+            <p className="text-sm text-indigo-600 font-black mb-8 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+              이어서 EstimateModal.jsx 파일을 생성하면<br/>이 창 대신 실제 견적서 작성 화면이 나타납니다.
+            </p>
+            <button 
+              onClick={() => setIsEstimateModalOpen(false)}
+              className="bg-gray-900 text-white px-8 py-3 rounded-xl font-black"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
