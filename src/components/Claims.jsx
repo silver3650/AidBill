@@ -994,7 +994,9 @@ export default function Claims() {
           model: rightDev?.name || '모델미정',
           price: rPrice,
           quantity: 1,
-          total: rPrice
+          total: rPrice,
+          // 💡 수정: 보청기 사진 데이터 추가
+          image_url: rightDev?.image_url || rightDev?.image || null
         });
       }
       if (claimData.hearing_aid_details?.left?.enabled) {
@@ -1004,16 +1006,21 @@ export default function Claims() {
           model: leftDev?.name || '모델미정',
           price: lPrice,
           quantity: 1,
-          total: lPrice
+          total: lPrice,
+          // 💡 수정: 보청기 사진 데이터 추가
+          image_url: leftDev?.image_url || leftDev?.image || null
         });
       }
     } else {
       claimItems.push({
-        name: claimData.products?.category ? `[${claimData.products?.category}] ${claimData.products?.name}` : (claimData.products?.name || '품목 미정'),
+        // 💡 수정 1: 품목명 카테고리 중복 표기 방지 (이미 합쳐진 이름만 사용)
+        name: claimData.products?.name || '품목 미정',
         model: claimData.products?.model || '',
         price: adjustedActualPrice,
         quantity: 1,
-        total: adjustedActualPrice
+        total: adjustedActualPrice,
+        // 💡 수정 2: 제품 사진(이미지) 누락 해결
+        image_url: claimData.products?.image_url || claimData.products?.image || null
       });
     }
 
@@ -1061,6 +1068,24 @@ export default function Claims() {
     if (TargetDoc) {
       try { 
         const isTransaction = fileName === '거래명세서';
+
+        // 💡 새롭게 바뀐 견적서(EstimateDoc) 전용 데이터 전달 방식 적용
+        if (fileName === '견적서') {
+          return (
+            <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
+              <div style={{ width: '100%', height: '100%' }}>
+                <TargetDoc
+                  targetName={transactionRecipientName}
+                  companyInfo={companyInfo}
+                  items={adjustedClaimData.items}
+                  totalAmount={adjustedClaimData.total_amount}
+                />
+              </div>
+            </div>
+          );
+        }
+
+        // 기존의 다른 서류들 렌더링
         return (
           <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
             <div style={isTransaction ? { transform: 'scale(0.93)', transformOrigin: 'top center', width: '100%' } : { width: '100%', height: '100%' }}>
@@ -1070,7 +1095,7 @@ export default function Claims() {
         ); 
       } 
       catch (error) { return <div className="h-[297mm] flex flex-col items-center justify-center text-red-500 font-bold bg-red-50 p-10 text-center">서류 렌더링 중 오류가 발생했습니다.<br/>{error.message}</div>; }
-    } 
+    }
     
     if (fileName === '사업자등록증') {
       return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
