@@ -1079,6 +1079,7 @@ export default function Claims() {
                   companyInfo={companyInfo}
                   items={adjustedClaimData.items}
                   totalAmount={adjustedClaimData.total_amount}
+                  claimDate={adjustedClaimData.claim_date}
                 />
               </div>
             </div>

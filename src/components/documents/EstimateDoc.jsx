@@ -1,9 +1,18 @@
 import React from 'react';
 
-export default function EstimateDoc({ targetName, companyInfo, items = [], totalAmount = 0 }) {
+export default function EstimateDoc({ targetName, companyInfo, items = [], totalAmount = 0, claimDate }) {
   
-  const today = new Date();
-  const defaultDateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+  // 💡 넘어온 교부일(claimDate)이 있으면 그 날짜를 쓰고, 없으면 오늘 날짜를 사용합니다.
+  const getFormattedDate = (dateInput) => {
+    if (!dateInput) {
+      const today = new Date();
+      return `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+    }
+    const d = new Date(dateInput);
+    return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+  };
+
+  const displayDateStr = getFormattedDate(claimDate);
 
   const getFontSize = (name) => {
     if (!name) return '1.5rem';
@@ -29,7 +38,8 @@ export default function EstimateDoc({ targetName, companyInfo, items = [], total
           </div>
           <div className="space-y-1">
             <p className="text-base text-gray-700 font-medium">아래와 같이 견적합니다.</p>
-            <p className="text-sm text-gray-600 font-bold">견적일자: {defaultDateStr}</p>
+            {/* 💡 계산된 displayDateStr를 출력합니다. */}
+            <p className="text-sm text-gray-600 font-bold">견적일자: {displayDateStr}</p>
           </div>
           <div className="text-xl font-bold mt-4">
             견적금액: ₩ {Number(totalAmount).toLocaleString()} -
