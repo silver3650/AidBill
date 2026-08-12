@@ -566,7 +566,6 @@ export default function Claims() {
     setActiveModal('edit');
   };
 
-  // 💡 드래그 앤 드롭 및 클릭 업로드를 모두 지원하도록 수정된 사진 업로드 핸들러
   const handlePhotoFilesChange = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -605,7 +604,6 @@ export default function Claims() {
     } catch (err) { alert('사진을 처리하는 중 오류가 발생했습니다.'); }
   };
 
-  // 💡 드래그 앤 드롭 및 클릭 업로드를 모두 지원하도록 수정된 단일 서류 업로드 핸들러
   const handleSingleDocUpload = (e, field) => {
     e.preventDefault();
     e.stopPropagation();
@@ -975,7 +973,6 @@ export default function Claims() {
     </div>
   );
 
-  // 💡 드래그 앤 드롭을 지원하도록 UI 개선된 증빙 서류 업로드 박스
   const renderDocUploadBox = (title, field) => (
     <div className="flex flex-col gap-1.5 w-full">
       <span className="text-[11px] font-bold text-gray-600">{title}</span>
@@ -1538,18 +1535,31 @@ export default function Claims() {
                   <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.mfg_date} onChange={e => setNewData({...newData, mfg_date: e.target.value})} /></div>
                 </div>
                 
-                {/* 💡 수량/단가 자동 계산 UI 적용 */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} /></div>
+                {/* 💡 수량/단가 자동 계산 UI 적용 (단가와 총 금액 넓이를 동일하게 맞춤) */}
+                <div className="flex flex-col sm:flex-row gap-3 border-t border-gray-100 pt-4">
+                  <div className="flex-[1.2]">
+                    <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label>
+                    <input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} />
+                  </div>
                   
                   {newData.item_type === 'hearing_aid' ? (
-                     <div className="md:col-span-2"><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.total_amount} readOnly /></div>
+                     <div className="flex-[3.8]">
+                       <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label>
+                       <input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-4 rounded-xl text-sm font-bold border border-gray-200 text-right" value={newData.total_amount} readOnly />
+                     </div>
                   ) : (
                      <>
-                       <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">단가</label><input type="number" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none" value={newData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setNewData({...newData, unit_price: up, total_amount: up * (newData.quantity||1)}); }} /></div>
-                       <div className="grid grid-cols-2 gap-2">
-                         <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">수량</label><input type="number" min="1" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none" value={newData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setNewData({...newData, quantity: q, total_amount: (newData.unit_price||0) * q}); }} /></div>
-                         <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" className="w-full bg-gray-50 text-indigo-900 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (newData.quantity||1))})} /></div>
+                       <div className="flex-[1.5]">
+                         <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">단가</label>
+                         <input type="number" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-right" value={newData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setNewData({...newData, unit_price: up, total_amount: up * (newData.quantity||1)}); }} />
+                       </div>
+                       <div className="flex-[0.8]">
+                         <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">수량</label>
+                         <input type="number" min="1" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-center" value={newData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setNewData({...newData, quantity: q, total_amount: (newData.unit_price||0) * q}); }} />
+                       </div>
+                       <div className="flex-[1.5]">
+                         <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label>
+                         <input type="number" className="w-full bg-gray-50 text-indigo-900 p-4 rounded-xl text-sm font-bold border border-gray-200 text-right" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (newData.quantity||1))})} />
                        </div>
                      </>
                   )}
@@ -1625,18 +1635,21 @@ export default function Claims() {
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} /></div>
                         </div>
-                        
-                        <div><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
 
                         {/* 💡 단가, 수량, 총 금액을 새로운 줄로 빼서 넓게 차지하도록 수정 */}
                         <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex-[1.2]">
+                            <label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label>
+                            <input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} />
+                          </div>
+                          
                           {editData.item_type === 'hearing_aid' ? (
-                             <div className="w-full"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} readOnly /></div>
+                             <div className="flex-[3.8]"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} readOnly /></div>
                           ) : (
                              <>
-                               <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">단가</label><input type="number" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-right" value={editData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setEditData({...editData, unit_price: up, total_amount: up * (editData.quantity||1)}); }} /></div>
-                               <div className="flex-[0.5]"><label className="text-[10px] text-gray-400 uppercase block mb-1">수량</label><input type="number" min="1" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-center" value={editData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setEditData({...editData, quantity: q, total_amount: (editData.unit_price||0) * q}); }} /></div>
-                               <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 금액</label><input type="number" className="w-full bg-gray-50 text-indigo-900 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (editData.quantity||1))})} /></div>
+                               <div className="flex-[1.5]"><label className="text-[10px] text-gray-400 uppercase block mb-1">단가</label><input type="number" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-right" value={editData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setEditData({...editData, unit_price: up, total_amount: up * (editData.quantity||1)}); }} /></div>
+                               <div className="flex-[0.8]"><label className="text-[10px] text-gray-400 uppercase block mb-1">수량</label><input type="number" min="1" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-center" value={editData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setEditData({...editData, quantity: q, total_amount: (editData.unit_price||0) * q}); }} /></div>
+                               <div className="flex-[1.5]"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 금액</label><input type="number" className="w-full bg-gray-50 text-indigo-900 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (editData.quantity||1))})} /></div>
                              </>
                           )}
                         </div>
