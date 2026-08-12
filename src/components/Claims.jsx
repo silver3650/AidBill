@@ -138,12 +138,12 @@ export default function Claims() {
 
   const [newData, setNewData, clearNewData] = useAutoSave('claims_new_data', { 
     customer_id: '', product_id: '', claim_date: new Date().toISOString().split('T')[0], 
-    total_amount: 0, purchase_date: '', mfg_date: '', 
+    total_amount: 0, quantity: 1, unit_price: 0, purchase_date: '', mfg_date: '', 
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
   });
   
   const [editData, setEditData, clearEditData] = useAutoSave('claims_edit_data', { 
-    claim_date: '', total_amount: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
+    claim_date: '', total_amount: 0, quantity: 1, unit_price: 0, status: '', carrier: 'CJ대한통운', tracking_no: '', 
     notes: '', purchase_date: '', mfg_date: '', tax_invoice_date: '', deposit_date: '',
     prescription_image: '', inspection_image: '', purchase_proof_image: '', id_card_image: '',
     item_type: 'general', hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
@@ -290,7 +290,7 @@ export default function Claims() {
     if (location.state?.autoOpenCreate && location.state?.customerId) {
       setNewData(prev => ({
         ...prev, customer_id: location.state.customerId, product_id: '', claim_date: new Date().toISOString().split('T')[0],
-        total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general',
+        total_amount: 0, quantity: 1, unit_price: 0, purchase_date: '', mfg_date: '', item_type: 'general',
         hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
       }));
       setCustSearchTerm(location.state.customerName || ''); setProdSearchTerm('');
@@ -416,7 +416,6 @@ export default function Claims() {
     return cleanString(combinedText).includes(cleanString(custSearchTerm));
   });
 
-  // 💡 수정됨: 상품명, 카테고리뿐만 아니라 model(모델명) 및 code(상품코드)까지 모두 검색 범위에 포함
   const filteredDevicesForSelect = allDevices.filter(d => {
     const combinedText = `${d.category || ''} ${d.name || ''} ${d.model || ''} ${d.code || ''}`;
     return cleanString(combinedText).includes(cleanString(prodSearchTerm));
@@ -507,6 +506,8 @@ export default function Claims() {
       product_id: primaryProductId || null,
       claim_date: newData.claim_date, 
       total_amount: parseInt(newData.total_amount) || 0, 
+      quantity: parseInt(newData.quantity) || 1,
+      unit_price: parseInt(newData.unit_price) || 0,
       purchase_date: newData.purchase_date || null,
       mfg_date: newData.mfg_date || null,
       status: '대기 중',
@@ -533,7 +534,7 @@ export default function Claims() {
   const openProductAssignmentModal = (claim) => {
     setNewData({
       customer_id: claim.customer_id || '', product_id: '', claim_date: new Date().toISOString().split('T')[0],
-      total_amount: 0, purchase_date: '', mfg_date: '', item_type: 'general',
+      total_amount: 0, quantity: 1, unit_price: 0, purchase_date: '', mfg_date: '', item_type: 'general',
       hearing_aid_details: { right: { enabled: false, product_id: '', price: 0 }, left: { enabled: false, product_id: '', price: 0 } }
     });
     setCustSearchTerm(claim.customers?.name || ''); 
@@ -549,6 +550,7 @@ export default function Claims() {
 
     setEditData({
       claim_date: claim.claim_date || '', total_amount: claim.total_amount || 0,
+      quantity: claim.quantity || 1, unit_price: claim.unit_price || claim.total_amount || 0,
       status: claim.status || '대기 중', carrier: claim.carrier || 'CJ대한통운',
       tracking_no: claim.tracking_no || '', notes: claim.notes || '',
       purchase_date: claim.purchase_date || '', mfg_date: claim.mfg_date || '',
@@ -564,9 +566,21 @@ export default function Claims() {
     setActiveModal('edit');
   };
 
+  // 💡 드래그 앤 드롭 및 클릭 업로드를 모두 지원하도록 수정된 사진 업로드 핸들러
   const handlePhotoFilesChange = async (e) => {
-    const files = Array.from(e.target.files);
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let files = [];
+    if (e.dataTransfer && e.dataTransfer.files) {
+      files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+    } else if (e.target && e.target.files) {
+      files = Array.from(e.target.files);
+    }
+    
+    if (!files || files.length === 0) return;
     if (photoFiles.length + files.length > 3) { alert('사진은 최대 3장까지만 추가할 수 있습니다.'); return; }
+    
     const compressImage = (file) => {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -591,9 +605,20 @@ export default function Claims() {
     } catch (err) { alert('사진을 처리하는 중 오류가 발생했습니다.'); }
   };
 
+  // 💡 드래그 앤 드롭 및 클릭 업로드를 모두 지원하도록 수정된 단일 서류 업로드 핸들러
   const handleSingleDocUpload = (e, field) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let file = null;
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      file = e.dataTransfer.files[0];
+    } else if (e.target && e.target.files && e.target.files.length > 0) {
+      file = e.target.files[0];
+    }
+    
+    if (!file || !file.type.startsWith('image/')) return;
+    
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (event) => {
@@ -619,6 +644,7 @@ export default function Claims() {
       
       const payload = {
         claim_date: editData.claim_date, total_amount: Number(editData.total_amount) || 0,
+        quantity: Number(editData.quantity) || 1, unit_price: Number(editData.unit_price) || 0,
         status: newStatus, carrier: editData.carrier, tracking_no: editData.tracking_no,
         receipt_photos: photoFiles.length > 0 ? JSON.stringify(photoFiles) : null,
         notes: editData.notes || '', purchase_date: editData.purchase_date || null,
@@ -949,19 +975,26 @@ export default function Claims() {
     </div>
   );
 
+  // 💡 드래그 앤 드롭을 지원하도록 UI 개선된 증빙 서류 업로드 박스
   const renderDocUploadBox = (title, field) => (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5 w-full">
       <span className="text-[11px] font-bold text-gray-600">{title}</span>
       {editData[field] ? (
-        <div className="relative group w-full h-24 shrink-0">
+        <div className="relative group w-full h-28 shrink-0">
           <img src={editData[field]} className="w-full h-full object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={title} />
           <button onClick={() => setEditData({...editData, [field]: null})} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
         </div>
       ) : (
-        <div className="relative border-2 border-dashed border-emerald-300 rounded-xl w-full h-24 flex flex-col items-center justify-center bg-emerald-50/50 hover:bg-emerald-100 cursor-pointer group shadow-sm shrink-0">
+        <div 
+          className="relative border-2 border-dashed border-emerald-300 rounded-xl w-full h-28 flex flex-col items-center justify-center bg-emerald-50/50 hover:bg-emerald-100 cursor-pointer group shadow-sm shrink-0 transition-colors"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => handleSingleDocUpload(e, field)}
+        >
           <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={(e) => handleSingleDocUpload(e, field)} />
-          <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-1 group-hover:bg-emerald-600 group-hover:text-white"><ImagePlus size={16} strokeWidth={2.5} /></div>
-          <span className="text-[10px] font-black text-emerald-600 group-hover:text-emerald-800">업로드</span>
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-1 group-hover:bg-emerald-600 group-hover:text-white transition-colors"><ImagePlus size={16} strokeWidth={2.5} /></div>
+          <span className="text-[10px] font-black text-emerald-600 group-hover:text-emerald-800 transition-colors">클릭 또는 드래그 앤 드롭</span>
         </div>
       )}
     </div>
@@ -995,7 +1028,6 @@ export default function Claims() {
           price: rPrice,
           quantity: 1,
           total: rPrice,
-          // 💡 수정: 보청기 사진 데이터 추가
           image_url: rightDev?.image_url || rightDev?.image || null
         });
       }
@@ -1007,19 +1039,19 @@ export default function Claims() {
           price: lPrice,
           quantity: 1,
           total: lPrice,
-          // 💡 수정: 보청기 사진 데이터 추가
           image_url: leftDev?.image_url || leftDev?.image || null
         });
       }
     } else {
+      const qty = claimData.quantity || 1;
+      const uPrice = claimData.unit_price || Math.floor(adjustedActualPrice / qty);
+
       claimItems.push({
-        // 💡 수정 1: 품목명 카테고리 중복 표기 방지 (이미 합쳐진 이름만 사용)
         name: claimData.products?.name || '품목 미정',
         model: claimData.products?.model || '',
-        price: adjustedActualPrice,
-        quantity: 1,
+        price: uPrice,
+        quantity: qty,
         total: adjustedActualPrice,
-        // 💡 수정 2: 제품 사진(이미지) 누락 해결
         image_url: claimData.products?.image_url || claimData.products?.image || null
       });
     }
@@ -1069,7 +1101,6 @@ export default function Claims() {
       try { 
         const isTransaction = fileName === '거래명세서';
 
-        // 💡 새롭게 바뀐 견적서(EstimateDoc) 전용 데이터 전달 방식 적용
         if (fileName === '견적서') {
           return (
             <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
@@ -1079,14 +1110,13 @@ export default function Claims() {
                   companyInfo={companyInfo}
                   items={adjustedClaimData.items}
                   totalAmount={adjustedClaimData.total_amount}
-                  claimDate={adjustedClaimData.claim_date}
+                  claimDate={adjustedClaimData.claim_date} 
                 />
               </div>
             </div>
           );
         }
 
-        // 기존의 다른 서류들 렌더링
         return (
           <div className="w-[210mm] h-[297mm] box-border relative overflow-hidden bg-white mx-auto flex flex-col justify-start">
             <div style={isTransaction ? { transform: 'scale(0.93)', transformOrigin: 'top center', width: '100%' } : { width: '100%', height: '100%' }}>
@@ -1096,7 +1126,7 @@ export default function Claims() {
         ); 
       } 
       catch (error) { return <div className="h-[297mm] flex flex-col items-center justify-center text-red-500 font-bold bg-red-50 p-10 text-center">서류 렌더링 중 오류가 발생했습니다.<br/>{error.message}</div>; }
-    }
+    } 
     
     if (fileName === '사업자등록증') {
       return <ImageOnlyDoc title="사업자등록증" src={companyInfo.biz_reg_image} />;
@@ -1456,7 +1486,13 @@ export default function Claims() {
                               onMouseDown={(e) => {
                                 e.preventDefault(); 
                                 const displayName = d.category ? `[${d.category}] ${d.name}` : d.name;
-                                setNewData({ ...newData, product_id: String(d.id), total_amount: d.price || 0 });
+                                setNewData({ 
+                                  ...newData, 
+                                  product_id: String(d.id), 
+                                  unit_price: d.price || 0,
+                                  quantity: 1,
+                                  total_amount: d.price || 0 
+                                });
                                 setProdSearchTerm(displayName);
                                 setIsProdDropdownOpen(false);
                               }} 
@@ -1501,10 +1537,24 @@ export default function Claims() {
                   <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.purchase_date} onChange={e => setNewData({...newData, purchase_date: e.target.value})} /></div>
                   <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.mfg_date} onChange={e => setNewData({...newData, mfg_date: e.target.value})} /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                
+                {/* 💡 수량/단가 자동 계산 UI 적용 */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
                   <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">교부 예정일</label><input type="date" className="w-full bg-gray-50 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.claim_date} onChange={e => setNewData({...newData, claim_date: e.target.value})} /></div>
-                  <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" disabled={newData.item_type === 'hearing_aid'} className={`w-full p-4 rounded-xl text-sm font-bold border border-gray-200 ${newData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50 text-indigo-900'}`} value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value})} /></div>
+                  
+                  {newData.item_type === 'hearing_aid' ? (
+                     <div className="md:col-span-2"><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.total_amount} readOnly /></div>
+                  ) : (
+                     <>
+                       <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">단가</label><input type="number" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none" value={newData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setNewData({...newData, unit_price: up, total_amount: up * (newData.quantity||1)}); }} /></div>
+                       <div className="grid grid-cols-2 gap-2">
+                         <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">수량</label><input type="number" min="1" className="w-full bg-white p-4 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none" value={newData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setNewData({...newData, quantity: q, total_amount: (newData.unit_price||0) * q}); }} /></div>
+                         <div><label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">총 청구 금액</label><input type="number" className="w-full bg-gray-50 text-indigo-900 p-4 rounded-xl text-sm font-bold border border-gray-200" value={newData.total_amount} onChange={e => setNewData({...newData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (newData.quantity||1))})} /></div>
+                       </div>
+                     </>
+                  )}
                 </div>
+
               </div>
               <div className="flex gap-3 shrink-0 pt-4 border-t border-gray-100">
                 <button onClick={() => { setActiveModal(null); setCustSearchTerm(''); setProdSearchTerm(''); setIsProdDropdownOpen(false); }} className="flex-1 py-4 bg-gray-100 rounded-2xl text-gray-600 hover:bg-gray-200 transition-colors">취소</button>
@@ -1514,16 +1564,21 @@ export default function Claims() {
           </div>
         )}
 
-        {/* 편집 모달 */}
+        {/* 💡 개편된 편집 모달 (좌우 2단 레이아웃 및 드래그 앤 드롭 지원) */}
         {activeModal === 'edit' && selectedClaim && (
           <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 animate-in zoom-in-95 font-black">
-            <div className="bg-white w-full max-w-2xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
+            {/* 넓어진 모달 컨테이너 (max-w-5xl) */}
+            <div className="bg-white w-full max-w-5xl rounded-3xl md:rounded-[2.5rem] p-6 md:p-8 shadow-2xl font-black flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                <div><h4 className="text-xl md:text-2xl font-black text-gray-900">내역 종합 편집</h4><p className="text-xs text-gray-400 mt-1">{selectedClaim?.customers?.name} 대상자의 교부 데이터를 수정합니다.</p></div>
+                <div>
+                  <h4 className="text-xl md:text-2xl font-black text-gray-900">내역 종합 편집</h4>
+                  <p className="text-xs text-gray-400 mt-1">{selectedClaim?.customers?.name} 대상자의 교부 데이터를 수정합니다.</p>
+                </div>
                 <button onClick={() => setActiveModal(null)} className="text-gray-400 hover:text-gray-800"><X size={24}/></button>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-4">
+                
                 {editData.item_type === 'hearing_aid' ? (
                   <div className="mb-5 border border-indigo-100 p-4 rounded-xl bg-white shadow-sm">
                     <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">보청기(좌/우) 할당 정보 수정</div>
@@ -1546,28 +1601,47 @@ export default function Claims() {
                   </div>
                 ) : (
                   <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-5 text-sm flex justify-between items-center shadow-sm">
-                    <span className="text-indigo-900 font-bold">현재 배정 품목</span><span className="text-indigo-600 font-black tracking-tight">{selectedClaim?.products?.name || '품목 미지정'}</span>
+                    <span className="text-indigo-900 font-bold">현재 배정 품목</span>
+                    <span className="text-indigo-600 font-black tracking-tight">{selectedClaim?.products?.name || '품목 미지정'}</span>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                  <div className="space-y-4 md:space-y-5">
+                {/* 💡 2단 레이아웃 메인 그리드 */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* 좌측 (텍스트 데이터 입력 영역) */}
+                  <div className="space-y-5">
                     <div>
                       <div className="text-xs text-indigo-600 font-black border-b pb-2 mb-3">기본 정보 & 상태</div>
                       <div className="space-y-3">
-                        <div><label className="text-[10px] text-gray-400 uppercase block mb-1">진행 파이프라인 (상태)</label><select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>{STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                        <div>
+                          <label className="text-[10px] text-gray-400 uppercase block mb-1">진행 파이프라인 (상태)</label>
+                          <select className="w-full bg-gray-50 p-3 rounded-xl outline-none border border-gray-200 text-sm font-bold text-gray-900" value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})}>
+                            {STATUS_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
                         
-                        <div className="flex flex-col md:flex-row gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">구입일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.purchase_date} onChange={e => setEditData({...editData, purchase_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">제조일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.mfg_date} onChange={e => setEditData({...editData, mfg_date: e.target.value})} /></div>
                         </div>
                         
-                        <div className="flex flex-col md:flex-row gap-2">
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
-                          <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled={editData.item_type === 'hearing_aid'} className={`w-full p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200 ${editData.item_type === 'hearing_aid' ? 'bg-gray-200 text-gray-500' : 'bg-gray-50'}`} value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value})} /></div>
+                        <div><label className="text-[10px] text-gray-400 uppercase block mb-1">교부일</label><input type="date" className="w-full bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.claim_date} onChange={e => setEditData({...editData, claim_date: e.target.value})} /></div>
+
+                        {/* 💡 단가, 수량, 총 금액을 새로운 줄로 빼서 넓게 차지하도록 수정 */}
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          {editData.item_type === 'hearing_aid' ? (
+                             <div className="w-full"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 청구 금액</label><input type="number" disabled className="w-full bg-gray-200 text-gray-500 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} readOnly /></div>
+                          ) : (
+                             <>
+                               <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">단가</label><input type="number" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-right" value={editData.unit_price} onChange={e => { const up = parseInt(e.target.value)||0; setEditData({...editData, unit_price: up, total_amount: up * (editData.quantity||1)}); }} /></div>
+                               <div className="flex-[0.5]"><label className="text-[10px] text-gray-400 uppercase block mb-1">수량</label><input type="number" min="1" className="w-full bg-white p-3 rounded-xl text-sm font-bold border border-gray-200 focus:border-indigo-400 outline-none text-center" value={editData.quantity} onChange={e => { const q = Math.max(1, parseInt(e.target.value)||1); setEditData({...editData, quantity: q, total_amount: (editData.unit_price||0) * q}); }} /></div>
+                               <div className="flex-1"><label className="text-[10px] text-gray-400 uppercase block mb-1">총 금액</label><input type="number" className="w-full bg-gray-50 text-indigo-900 p-3 rounded-xl text-sm font-mono font-bold text-right border border-gray-200" value={editData.total_amount} onChange={e => setEditData({...editData, total_amount: e.target.value, unit_price: Math.floor(parseInt(e.target.value) / (editData.quantity||1))})} /></div>
+                             </>
+                          )}
                         </div>
 
-                        <div className="flex flex-col md:flex-row gap-2 pt-2 border-t border-dashed border-gray-200 mt-2">
+                        <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-dashed border-gray-200 mt-2">
                           <div className="flex-1"><label className="text-[10px] text-blue-500 uppercase block mb-1">세금계산서 발행일</label><input type="date" className="w-full bg-blue-50/30 p-3 rounded-xl text-sm font-bold border border-blue-100 focus:border-blue-300 outline-none" value={editData.tax_invoice_date} onChange={e => setEditData({...editData, tax_invoice_date: e.target.value})} /></div>
                           <div className="flex-1"><label className="text-[10px] text-emerald-500 uppercase block mb-1">입금 확인일</label><input type="date" className="w-full bg-emerald-50/30 p-3 rounded-xl text-sm font-bold border border-emerald-100 focus:border-emerald-300 outline-none" value={editData.deposit_date} onChange={e => setEditData({...editData, deposit_date: e.target.value})} /></div>
                         </div>
@@ -1576,9 +1650,11 @@ export default function Claims() {
 
                     <div>
                       <div className="text-xs text-amber-600 font-black border-b pb-2 mb-3 mt-2">물류 및 배송 정보</div>
-                      <div className="flex flex-col md:flex-row gap-2">
-                        <select className="w-full md:w-1/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}><option value="CJ대한통운">CJ대한통운</option><option value="우체국택배">우체국택배</option><option value="롯데택배">롯데택배</option><option value="한진택배">한진택배</option><option value="로젠택배">로젠택배</option><option value="경동택배">경동택배</option><option value="대신택배">대신택배</option><option value="일양로지스">일양로지스</option><option value="천일택배">천일택배</option><option value="건영택배">건영택배</option><option value="CU 편의점택배">CU 편의점택배</option><option value="GS25 편의점택배">GS25 편의점택배</option><option value="직접 배송/설치">직접 배송/설치</option><option value="기타">기타</option></select>
-                        <input className="w-full md:w-2/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select className="w-full sm:w-1/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.carrier} onChange={e => setEditData({...editData, carrier: e.target.value})}>
+                          <option value="CJ대한통운">CJ대한통운</option><option value="우체국택배">우체국택배</option><option value="롯데택배">롯데택배</option><option value="한진택배">한진택배</option><option value="로젠택배">로젠택배</option><option value="경동택배">경동택배</option><option value="대신택배">대신택배</option><option value="일양로지스">일양로지스</option><option value="천일택배">천일택배</option><option value="건영택배">건영택배</option><option value="CU 편의점택배">CU 편의점택배</option><option value="GS25 편의점택배">GS25 편의점택배</option><option value="직접 배송/설치">직접 배송/설치</option><option value="기타">기타</option>
+                        </select>
+                        <input className="w-full sm:w-2/3 bg-gray-50 p-3 rounded-xl text-sm font-bold border border-gray-200" value={editData.tracking_no} onChange={e => setEditData({...editData, tracking_no: e.target.value})} placeholder="송장번호 입력" />
                       </div>
                     </div>
 
@@ -1588,45 +1664,62 @@ export default function Claims() {
                     </div>
                   </div>
 
-                  <div className="col-span-1 md:col-span-2 mt-2 bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100">
-                    <div className="text-xs text-emerald-600 font-black border-b border-emerald-200 pb-2 mb-3 flex items-center gap-1.5">
-                      <ImagePlus size={14}/> 청구 증빙 서류 업로드 (이미지)
+                  {/* 우측 (이미지 업로드 영역 - 💡 드래그앤드롭 적용) */}
+                  <div className="space-y-5 flex flex-col h-full">
+                    
+                    {/* 💡 수취 증빙 사진이 위로 올라옴 */}
+                    <div className="bg-blue-50/30 p-4 md:p-5 rounded-2xl border border-blue-100 flex-1 flex flex-col">
+                      <div className="text-xs text-blue-600 font-black border-b border-blue-200 pb-2 mb-4 flex justify-between items-center">
+                        <span className="flex items-center gap-1.5"><Camera size={14}/> 수취 증빙 사진 (교부확인서 삽입)</span>
+                        <span className="text-blue-400 tracking-wider font-bold text-[10px] bg-white px-2 py-0.5 rounded shadow-sm">{photoFiles.length} / 3 장</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {photoFiles.map((src, idx) => (
+                          <div key={idx} className="relative group w-full h-28 shrink-0">
+                            <img src={src} className="w-full h-full object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
+                            <button onClick={() => setPhotoFiles(photoFiles.filter((_, i) => i !== idx))} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
+                          </div>
+                        ))}
+                        {photoFiles.length < 3 && (
+                          <div 
+                            className="relative border-2 border-dashed border-blue-300 rounded-xl w-full h-28 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 cursor-pointer group shadow-sm shrink-0 transition-colors"
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={(e) => handlePhotoFilesChange(e)}
+                          >
+                            <input type="file" accept="image/*" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={handlePhotoFilesChange} />
+                            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white transition-colors"><ImagePlus size={18} strokeWidth={2.5} /></div>
+                            <span className="text-[10px] font-black text-blue-600 group-hover:text-blue-800 transition-colors">클릭 또는 드래그 (+ 추가)</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {isPrescriptionRequired(selectedClaim?.products, editData.item_type, isNHISClaim(selectedClaim)) && renderDocUploadBox('처방전 (해당 품목 필수)', 'prescription_image')}
-                      {isNHISClaim(selectedClaim) && !isInspectionExempt(selectedClaim?.products) && renderDocUploadBox('검수확인서', 'inspection_image')}
-                      {renderDocUploadBox('세금계산서 (구매증빙)', 'purchase_proof_image')}
-                      {isNHISClaim(selectedClaim) && renderDocUploadBox('신분증/복지카드', 'id_card_image')}
-                    </div>
-                    <p className="text-[10px] text-gray-500 font-bold mt-3">* 업로드된 이미지는 인쇄 및 메일 발송 시 PDF에 통합되어 자동 출력됩니다.</p>
-                  </div>
 
-                  <div className="col-span-1 md:col-span-2">
-                    <div className="text-xs text-blue-600 font-black border-b pb-2 mb-3 flex justify-between"><span>수취 증빙 사진 (교부확인서 삽입)</span><span className="text-gray-400 tracking-wider">{photoFiles.length}/3 장</span></div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {photoFiles.map((src, idx) => (
-                        <div key={idx} className="relative group w-full h-24 shrink-0">
-                          <img src={src} className="w-full h-full object-cover rounded-xl border-2 border-gray-200 shadow-sm transition-all group-hover:brightness-50" alt={`미리보기 ${idx+1}`} />
-                          <button onClick={() => setPhotoFiles(photoFiles.filter((_, i) => i !== idx))} className="absolute inset-0 m-auto w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={16}/></button>
-                        </div>
-                      ))}
-                      {photoFiles.length < 3 && (
-                        <div className="relative border-2 border-dashed border-blue-300 rounded-xl w-full h-24 flex flex-col items-center justify-center bg-blue-50/50 hover:bg-blue-100 cursor-pointer group shadow-sm shrink-0">
-                          <input type="file" accept="image/*" multiple className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" onChange={handlePhotoFilesChange} />
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1 group-hover:bg-blue-600 group-hover:text-white"><ImagePlus size={18} strokeWidth={2.5} /></div>
-                          <span className="text-[10px] font-black text-blue-600 group-hover:text-blue-800">+ 추가</span>
-                        </div>
-                      )}
+                    {/* 💡 청구 증빙 서류 업로드가 아래로 내려감 */}
+                    <div className="bg-emerald-50/30 p-4 md:p-5 rounded-2xl border border-emerald-100 flex-1 flex flex-col">
+                      <div className="text-xs text-emerald-600 font-black border-b border-emerald-200 pb-2 mb-4 flex items-center gap-1.5">
+                        <ImagePlus size={14}/> 청구 증빙 서류 업로드 (이미지)
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        {isPrescriptionRequired(selectedClaim?.products, editData.item_type, isNHISClaim(selectedClaim)) && renderDocUploadBox('처방전 (해당 품목 필수)', 'prescription_image')}
+                        {isNHISClaim(selectedClaim) && !isInspectionExempt(selectedClaim?.products) && renderDocUploadBox('검수확인서', 'inspection_image')}
+                        {renderDocUploadBox('세금계산서 (구매증빙)', 'purchase_proof_image')}
+                        {isNHISClaim(selectedClaim) && renderDocUploadBox('신분증/복지카드', 'id_card_image')}
+                      </div>
+                      <p className="text-[10px] text-gray-500 font-bold mt-auto pt-4">* 업로드된 이미지는 인쇄 및 메일 발송 시 PDF에 통합되어 자동 출력됩니다.</p>
                     </div>
+
                   </div>
                 </div>
+
               </div>
 
-              <div className="flex flex-col md:flex-row gap-3 justify-between border-t pt-4 mt-2 flex-shrink-0">
-                <button onClick={() => handleDelete(selectedClaim?.id)} className="w-full md:w-auto px-5 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm order-last md:order-first"><Trash2 size={16}/> 삭제하기</button>
+              <div className="flex flex-col md:flex-row gap-3 justify-between border-t pt-5 mt-2 flex-shrink-0">
+                <button onClick={() => handleDelete(selectedClaim?.id)} className="w-full md:w-auto px-6 py-3.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-2xl flex items-center justify-center gap-2 text-sm font-black shadow-sm order-last md:order-first transition-colors"><Trash2 size={16}/> 삭제하기</button>
                 <div className="flex gap-2 w-full md:w-auto">
-                  <button onClick={() => setActiveModal(null)} className="flex-1 md:flex-none px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 text-sm shadow-sm">취소</button>
-                  <button onClick={handleEditSubmit} disabled={isSavingEdit} className="flex-[2] md:flex-none px-8 py-3 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 text-sm flex items-center justify-center gap-2 disabled:bg-indigo-400">
+                  <button onClick={() => setActiveModal(null)} className="flex-1 md:flex-none px-6 py-3.5 bg-gray-100 text-gray-600 rounded-2xl hover:bg-gray-200 text-sm font-black shadow-sm transition-colors">취소</button>
+                  <button onClick={handleEditSubmit} disabled={isSavingEdit} className="flex-[2] md:flex-none px-8 py-3.5 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700 text-sm font-black flex items-center justify-center gap-2 disabled:bg-indigo-400 transition-colors">
                     {isSavingEdit ? <Loader2 size={16} className="animate-spin" /> : '첨부하기 (저장)'}
                   </button>
                 </div>
