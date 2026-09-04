@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Download, FileText, Loader2, Plus, Minus, Building, Mail, Search, ChevronLeft } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import EstimateDoc from './documents/EstimateDoc';
-import html2pdf from 'html2pdf.js'; // 💡 새로운 PDF 라이브러리 임포트
+import html2pdf from 'html2pdf.js';
 
 export default function EstimateModal({ isOpen, onClose, selectedDevices, companyId }) {
   const [items, setItems] = useState([]);
@@ -15,7 +15,6 @@ export default function EstimateModal({ isOpen, onClose, selectedDevices, compan
   const [filteredGovs, setFilteredGovs] = useState([]);
   const [isGovDropdownOpen, setIsGovDropdownOpen] = useState(false);
 
-  // 💡 메일 작성 모드 관련 상태 추가
   const [isEmailMode, setIsEmailMode] = useState(false);
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
@@ -44,7 +43,6 @@ export default function EstimateModal({ isOpen, onClose, selectedDevices, compan
     fetchData();
   }, [companyId]);
 
-  // 수신처가 변경될 때마다 메일 제목/본문 기본값 자동 세팅
   useEffect(() => {
     const compName = companyInfo?.company_name || '협력업체';
     const compPhone = companyInfo?.contact_number || '연락처 미등록';
@@ -52,7 +50,6 @@ export default function EstimateModal({ isOpen, onClose, selectedDevices, compan
 
     setEmailSubject(`[견적서] ${compName} - 장애인 보조기기 견적서 송부 건`);
     
-    // 💡 요청하신 양식에 맞게 띄어쓰기와 줄바꿈(\n)을 적용하여 가독성을 높였습니다.
     setEmailBody(`안녕하세요, ${targetName || '지자체'} 담당 주무관님.
 
 요청하신 장애인 보조기기 견적서를 첨부파일(PDF)로 보내드립니다.
@@ -89,44 +86,45 @@ ${compName}
     setIsGovDropdownOpen(false);
   };
 
-  // 💡 PDF 저장 옵션 공통화
   const getPdfOptions = () => ({
     margin: 0,
     filename: `${targetName || '지자체'}_견적서.pdf`,
     image: { type: 'jpeg', quality: 1 },
-    // 💡 변경: scrollY: 0 을 추가하여 스크롤 위치와 상관없이 항상 문서 최상단부터 캡처하도록 강제합니다.
     html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   });
 
-  // 💡 [기능 1] PDF 강제 다운로드
   const handlePdfDownload = () => {
     html2pdf().set(getPdfOptions()).from(printRef.current).save();
   };
 
-  // 💡 [기능 2] 최종 이메일 발송 (PDF 변환 후 첨부)
   const handleSendEmail = async () => {
     setIsSending(true);
     try {
-      // 1. DB에 견적 이력 저장
-      const { error: dbError } = await supabase.from('estimates').insert([{
+      // 💡 [수정] 새로 만든 견적 이력 테이블(estimate_history)에 저장하도록 연동 완료
+      const itemNames = items.map(i => i.name);
+      const summaryText = itemNames.length > 1 
+        ? `${itemNames[0]} 외 ${itemNames.length - 1}건` 
+        : itemNames[0];
+
+      const { error: dbError } = await supabase.from('estimate_history').insert([{
         company_id: companyId,
-        target_name: targetName,
-        items: items,
-        total_amount: totalAmount
+        recipient_name: targetName || '미지정 수신처',
+        recipient_email: targetEmail || null,
+        items_summary: summaryText,
+        total_amount: totalAmount,
+        order_status: '견적 발송'
       }]);
+      
       if (dbError) throw dbError;
 
-      // 2. 화면의 견적서를 PDF Base64 데이터로 변환 (백그라운드에서 진행)
       const pdfBase64String = await html2pdf()
         .set(getPdfOptions())
         .from(printRef.current)
         .outputPdf('datauristring');
       
-      // 'data:application/pdf;base64,' 앞부분을 잘라내고 순수 데이터만 추출
       const base64Data = pdfBase64String.split(',')[1];
 
-      // 3. Supabase Edge Function 호출
       const { error: emailError } = await supabase.functions.invoke('send-estimate-email', {
         body: {
           to: targetEmail,
@@ -134,16 +132,16 @@ ${compName}
           textBody: emailBody,
           companyName: companyInfo?.company_name || '협력업체',
           targetName: targetName || '지자체',
-          attachmentBase64: base64Data // PDF 첨부파일 탑재
+          attachmentBase64: base64Data 
         }
       });
       if (emailError) throw emailError;
 
-      alert('✅ 견적서가 PDF로 첨부되어 성공적으로 발송되었습니다!');
+      alert('✅ 견적서 발송 및 이력 저장이 완료되었습니다!');
       onClose();
     } catch (error) {
       console.error(error);
-      alert('견적서 발송에 실패했습니다: ' + error.message);
+      alert('견적서 처리 중 오류가 발생했습니다: ' + error.message);
     } finally {
       setIsSending(false);
     }
@@ -166,20 +164,18 @@ ${compName}
 
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
           
-          {/* 좌측 패널: 기본 설정 모드 vs 이메일 작성 모드 교체 */}
           <div className="w-full md:w-1/3 bg-white border-r border-gray-100 p-6 flex flex-col overflow-y-auto custom-scrollbar">
             
             {!isEmailMode ? (
-              // --- [기본 모드] 수신처 및 수량 설정 ---
               <>
                 <div className="space-y-4 mb-6">
                   <h3 className="font-black text-gray-800 text-sm">1. 수신처 정보 설정</h3>
                   
                   <div className="relative">
-                    <label className="text-xs font-bold text-gray-500 ml-1 flex items-center gap-1 mb-1.5"><Building size={12}/> 기관명(지자체명) 검색</label>
+                    <label className="text-xs font-bold text-gray-500 ml-1 flex items-center gap-1 mb-1.5"><Building size={12}/> 기관명(지자체/수급자) 입력</label>
                     <div className="relative">
                       <input 
-                        type="text" placeholder="예: 성남시청 (검색어 입력)" 
+                        type="text" placeholder="기관명/대상자명 직접 입력 또는 검색" 
                         className="w-full bg-gray-50 p-3 pr-10 rounded-xl outline-none font-bold text-sm focus:ring-2 focus:ring-indigo-100"
                         value={targetName} onChange={handleGovSearch}
                         onFocus={() => setIsGovDropdownOpen(true)}
@@ -202,7 +198,7 @@ ${compName}
                   <div>
                     <label className="text-xs font-bold text-gray-500 ml-1 flex items-center gap-1 mb-1.5"><Mail size={12}/> 수신 이메일</label>
                     <input 
-                      type="email" placeholder="이메일 주소 직접 입력/수정" 
+                      type="email" placeholder="이메일 주소 직접 입력" 
                       className="w-full bg-gray-50 p-3 rounded-xl outline-none font-bold text-sm focus:ring-2 focus:ring-indigo-100"
                       value={targetEmail} onChange={(e) => setTargetEmail(e.target.value)}
                     />
@@ -233,7 +229,7 @@ ${compName}
                     <button 
                       onClick={() => {
                         if(!targetName || !targetEmail) return alert('수신처와 이메일을 먼저 입력해주세요.');
-                        setIsEmailMode(true); // 이메일 작성 모드로 전환
+                        setIsEmailMode(true);
                       }} 
                       className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                     >
@@ -249,7 +245,6 @@ ${compName}
                 </div>
               </>
             ) : (
-              // --- [이메일 모드] 메일 제목 및 본문 수정 ---
               <div className="flex flex-col h-full animate-in slide-in-from-right-4 duration-300">
                 <button 
                   onClick={() => setIsEmailMode(false)} 
@@ -297,7 +292,7 @@ ${compName}
                     className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                   >
                     {isSending ? <Loader2 className="animate-spin" size={18}/> : <Send size={18}/>}
-                    PDF 첨부하여 최종 발송하기
+                    PDF 첨부하여 최종 발송 (이력 저장)
                   </button>
                 </div>
               </div>
@@ -305,13 +300,11 @@ ${compName}
 
           </div>
 
-          {/* 우측: 실제 견적서 렌더링 영역 (PDF 변환의 원본) */}
           <div className="w-full md:w-2/3 bg-gray-200 p-4 md:p-8 overflow-y-auto flex justify-center items-start custom-scrollbar">
-            {/* 💡 회색 박스(bg-gray-200)가 침범하지 않도록 불필요한 div와 여백(padding)을 완전히 제거했습니다. */}
             <div className="shadow-xl transform origin-top md:scale-100 scale-75 shrink-0">
               <div ref={printRef} className="bg-white">
                 <EstimateDoc 
-                  targetName={targetName || '지자체명 미지정'} 
+                  targetName={targetName || '지자체/수신처 미지정'} 
                   companyInfo={companyInfo} 
                   items={items} 
                   totalAmount={totalAmount} 

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
-  LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2 
-} from 'lucide-react';
+  LayoutDashboard, Landmark, Users, Package, FileText, Building, ChevronRight, Menu, X, ShieldCheck, Building2, History 
+} from 'lucide-react'; // 💡 History 아이콘 추가
 import { supabase } from './supabaseClient';
 
 // --- 💡 최고관리자 업체 접속(Impersonation)을 위한 세션 가로채기 ---
@@ -39,6 +39,7 @@ import NHISBranches from './components/NHISBranches';
 import Customers from './components/Customers';
 import Devices from './components/Devices';
 import Claims from './components/Claims';
+import EstimateHistory from './components/EstimateHistory'; // 💡 견적 이력 컴포넌트 임포트
 import CompanyProfile from './components/CompanyProfile';
 import AuthPage from './components/AuthPage';
 import LogoutButton from './components/LogoutButton';
@@ -79,9 +80,11 @@ function MainLayout({ isAdmin, companyName }) {
     return () => supabase.removeChannel(subscription);
   }, [isAdmin]);
 
+  // 💡 메뉴 목록에 '견적/발주 관리' 추가
   let menuItems = [
     { id: 'dashboard', path: '/', text: '대시보드', icon: <LayoutDashboard size={22} /> },
     { id: 'claims', path: '/claims', text: '청구 관리', icon: <FileText size={22} /> },
+    { id: 'estimateHistory', path: '/estimate-history', text: '견적/발주 이력', icon: <History size={22} /> }, // 💡 추가된 메뉴
     { id: 'customers', path: '/customers', text: '대상자 관리', icon: <Users size={22} /> },
     { id: 'devices', path: '/devices', text: '보조기기 품목', icon: <Package size={22} /> },
     { id: 'localGovs', path: '/localGovs', text: '지자체 관리', icon: <Landmark size={22} /> },
@@ -154,8 +157,10 @@ function MainLayout({ isAdmin, companyName }) {
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC] p-4 md:p-10 w-full">
           <div className="max-w-7xl mx-auto min-h-full pb-20">
             <Routes>
+              {/* 💡 라우팅(주소) 연결 */}
               <Route path="/" element={<Dashboard />} />
               <Route path="/claims" element={<Claims />} />
+              <Route path="/estimate-history" element={<EstimateHistory />} /> {/* 💡 추가된 라우팅 */}
               <Route path="/customers" element={<Customers />} />
               <Route path="/devices" element={<Devices />} />
               <Route path="/localGovs" element={<LocalGovernments />} />
