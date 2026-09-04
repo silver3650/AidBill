@@ -113,7 +113,8 @@ ${compName}
         recipient_email: targetEmail || null,
         items_summary: summaryText,
         total_amount: totalAmount,
-        order_status: '견적 발송'
+        order_status: '견적 발송',
+        items: items
       }]);
       
       if (dbError) throw dbError;
