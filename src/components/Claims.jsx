@@ -168,6 +168,7 @@ export default function Claims() {
 
   const pdfContainerRef = useRef(null);
 
+  // 💡 기타 첨부 중복 방지를 위해 이름을 하나로 통일
   const DOC_KEY_MAPPING = {
     'cost_claim': '교부비용청구서',
     'delivery_confirm': '교부확인서',
@@ -176,11 +177,13 @@ export default function Claims() {
     'transaction': '거래명세서',
     'bankbook': '계좌사본',
     'biz_reg': '사업자등록증',
-    'etc': '기타 첨부(배송추적 캡쳐본 등)'
+    'etc': '기타 첨부 자료'
   };
 
+  // 💡 지자체 청구시에도 세금계산서, 처방전 등이 리스트에 나올 수 있도록 풀 세팅
   const LOCAL_GOV_DOCS = [
-    '교부비용청구서', '교부확인서', '물품인수증', '견적서', '거래명세서', '계좌사본', '사업자등록증', '기타 첨부(배송추적 캡쳐본 등)'
+    '교부비용청구서', '교부확인서', '물품인수증', '견적서', '거래명세서', '계좌사본', '사업자등록증',
+    '처방전', '검수확인서', '구매 증빙서류 (세금계산서 등)', '신분증 및 복지카드 사본', '기타 첨부 자료'
   ];
   
   const NHIS_PERSONAL_DOCS = [
@@ -243,14 +246,18 @@ export default function Claims() {
           const parsedReq = typeof govReqDocs === 'string' ? JSON.parse(govReqDocs) : govReqDocs;
           if (Array.isArray(parsedReq)) {
             parsedReq.forEach(key => {
-              const translatedName = DOC_KEY_MAPPING[key] || key;
+              let translatedName = DOC_KEY_MAPPING[key] || key;
+              if (translatedName.includes('기타 첨부')) translatedName = '기타 첨부 자료'; // 💡 중복된 기타 첨부 이름 통합
               if (!docs.includes(translatedName)) docs.push(translatedName);
             });
           }
         } catch(e) {}
       }
     }
-    return docs;
+    
+    // 💡 최종 배열에서 기타 첨부 이름 완전히 통합 및 중복 제거
+    docs = docs.map(d => d.includes('기타 첨부') ? '기타 첨부 자료' : d);
+    return [...new Set(docs)];
   };
 
   const documentComponents = {
@@ -736,6 +743,7 @@ export default function Claims() {
     }
   };
 
+  // 💡 체크박스 목록 생성 및 스마트 자동 체크 로직
   const getInitialFilesFromGov = (claim, subject) => {
     const initialFiles = {};
     const fullDocsList = getDocsListForClaim(claim, subject) || [];
@@ -745,14 +753,24 @@ export default function Claims() {
     
     if (!isNHIS) {
       const govReqDocs = claim?.customers?.local_governments?.required_documents;
-      if (govReqDocs) {
+      if (govReqDocs && govReqDocs !== '[]' && govReqDocs !== '') {
         try {
           const parsed = typeof govReqDocs === 'string' ? JSON.parse(govReqDocs) : govReqDocs;
-          if (Array.isArray(parsed)) {
-            defaultCheckedDocs = parsed.map(key => DOC_KEY_MAPPING[key] || key);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            defaultCheckedDocs = parsed.map(key => {
+              let t = DOC_KEY_MAPPING[key] || key;
+              if (t.includes('기타 첨부')) return '기타 첨부 자료';
+              return t;
+            });
           }
         } catch(e) {}
       }
+      
+      // 💡 아래 영역에서 업로드된 이미지는 서류 리스트에서 자동으로 체크되도록 지원!
+      if (claim.prescription_image && !defaultCheckedDocs.includes('처방전')) defaultCheckedDocs.push('처방전');
+      if (claim.inspection_image && !defaultCheckedDocs.includes('검수확인서')) defaultCheckedDocs.push('검수확인서');
+      if (claim.purchase_proof_image && !defaultCheckedDocs.includes('구매 증빙서류 (세금계산서 등)')) defaultCheckedDocs.push('구매 증빙서류 (세금계산서 등)');
+      if (claim.id_card_image && !defaultCheckedDocs.includes('신분증 및 복지카드 사본')) defaultCheckedDocs.push('신분증 및 복지카드 사본');
     }
 
     fullDocsList.forEach(docName => {
@@ -1167,11 +1185,11 @@ export default function Claims() {
     } else if (fileName.includes('기타 첨부') || fileName.includes('교부 사진')) {
       return (
         <div className="bg-white w-[210mm] h-[297mm] p-[20mm] flex flex-col text-slate-900 box-border overflow-hidden relative">
-          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">{fileName.includes('교부 사진') ? '교부 사진 (기기전체 및 바코드)' : '기타 첨부 자료'}</h2>
+          <h2 className="text-2xl font-black mb-10 text-center tracking-widest">{fileName.includes('교부 사진') ? '교부 사진 (기기전체 및 바코드)' : '기타 첨부 자료 (수취/배송 증빙)'}</h2>
           <div className="flex flex-col gap-8 items-center justify-center flex-1 overflow-hidden">
             {adjustedClaimData?.receipt_photos && adjustedClaimData.receipt_photos.length > 0 ? (
               adjustedClaimData.receipt_photos.map((src, i) => (<div key={i} className="flex flex-col items-center"><span className="text-sm font-bold text-gray-500 mb-2">사진 {i + 1}</span><img src={src} className="max-w-full max-h-[70mm] object-contain border p-2 shadow-sm" alt={`기타첨부 ${i+1}`}/></div>))
-            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 사진이 없습니다.</div>)}
+            ) : (<div className="text-gray-400 font-bold border-2 border-dashed border-gray-300 w-full h-[150mm] flex items-center justify-center bg-gray-50 rounded-2xl">등록된 증빙 사진이 없습니다.</div>)}
           </div>
         </div>
       );
